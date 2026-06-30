@@ -1,0 +1,136 @@
+# Azure DevOps pipeline — deploy backend + frontend to shared App Service Plan.
+# Create two Environments (production) and set pipeline variables / variable groups.
+
+trigger:
+  branches:
+    include:
+      - main
+
+variables:
+  pythonVersion: '3.11'
+  nodeVersion: '20.x'
+  backendPath: 'backend'
+  frontendPath: 'frontend'
+  # Set in Pipeline → Variables or a linked Variable Group:
+  # azureServiceConnection, apiWebAppName, webWebAppName, viteApiBaseUrl
+
+stages:
+  - stage: Build
+    displayName: Build artifacts
+    jobs:
+      - job: BuildBackend
+        displayName: Build backend
+        pool:
+          vmImage: ubuntu-latest
+        steps:
+          - checkout: self
+
+          - task: UsePythonVersion@0
+            inputs:
+              versionSpec: '$(pythonVersion)'
+
+          - script: |
+              python -m pip install --upgrade pip
+              pip install -r requirements.txt
+              python -c "from app.main import app; print('Import OK:', app.title)"
+            workingDirectory: '$(backendPath)'
+            displayName: Validate backend
+
+          - task: ArchiveFiles@2
+            inputs:
+              rootFolderOrFile: '$(backendPath)'
+              includeRootFolder: false
+              archiveType: zip
+              archiveFile: '$(Build.ArtifactStagingDirectory)/backend.zip'
+              replaceExistingArchive: true
+
+          - publish: '$(Build.ArtifactStagingDirectory)/backend.zip'
+            artifact: backend
+            displayName: Publish backend artifact
+
+      - job: BuildFrontend
+        displayName: Build frontend
+        pool:
+          vmImage: ubuntu-latest
+        steps:
+          - checkout: self
+
+          - task: NodeTool@0
+            inputs:
+              versionSpec: '$(nodeVersion)'
+
+          - script: npm ci
+            workingDirectory: '$(frontendPath)'
+            displayName: npm ci
+
+          - script: npm run build
+            workingDirectory: '$(frontendPath)'
+            displayName: npm run build
+            env:
+              VITE_API_BASE_URL: '$(viteApiBaseUrl)'
+
+          - script: |
+              mkdir -p deploy
+              cp -R dist/. deploy/
+              cp startup.sh deploy/startup.sh
+              chmod +x deploy/startup.sh
+            workingDirectory: '$(frontendPath)'
+            displayName: Prepare frontend package
+
+          - task: ArchiveFiles@2
+            inputs:
+              rootFolderOrFile: '$(frontendPath)/deploy'
+              includeRootFolder: false
+              archiveType: zip
+              archiveFile: '$(Build.ArtifactStagingDirectory)/frontend.zip'
+              replaceExistingArchive: true
+
+          - publish: '$(Build.ArtifactStagingDirectory)/frontend.zip'
+            artifact: frontend
+            displayName: Publish frontend artifact
+
+  - stage: DeployProduction
+    displayName: Deploy to production
+    dependsOn: Build
+    condition: succeeded()
+    jobs:
+      - deployment: DeployBackend
+        displayName: Deploy API
+        environment: production
+        pool:
+          vmImage: ubuntu-latest
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - download: current
+                  artifact: backend
+
+                - task: AzureWebApp@1
+                  inputs:
+                    azureSubscription: '$(azureServiceConnection)'
+                    appType: webAppLinux
+                    appName: '$(apiWebAppName)'
+                    package: '$(Pipeline.Workspace)/backend/backend.zip'
+                    startUpCommand: 'bash startup.sh'
+
+      - deployment: DeployFrontend
+        displayName: Deploy Web
+        dependsOn: DeployBackend
+        environment: production
+        pool:
+          vmImage: ubuntu-latest
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - download: current
+                  artifact: frontend
+
+                - task: AzureWebApp@1
+                  inputs:
+                    azureSubscription: '$(azureServiceConnection)'
+                    appType: webAppLinux
+                    appName: '$(webWebAppName)'
+                    package: '$(Pipeline.Workspace)/frontend/frontend.zip'
+                    startUpCommand: 'bash startup.sh'
