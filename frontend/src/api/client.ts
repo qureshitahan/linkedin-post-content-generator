@@ -62,6 +62,9 @@ export const api = {
 
   listObjectives: () => request<Objective[]>('/objectives'),
 
+  clearObjectives: () =>
+    request<{ deleted: number }>('/objectives', { method: 'DELETE' }),
+
   regenerateDraft: (objectiveId: number, topicId: number, draftIndex = 0) =>
     request<Topic>(
       `/objectives/${objectiveId}/topics/${topicId}/regenerate-draft?draft_index=${draftIndex}`,

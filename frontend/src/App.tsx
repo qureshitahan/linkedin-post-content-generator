@@ -14,6 +14,7 @@ export default function App() {
   const [objective, setObjective] = useState<Objective | null>(null);
   const [runSettings, setRunSettings] = useState<RunSettings>(DEFAULT_RUN_SETTINGS);
   const [history, setHistory] = useState<Objective[]>([]);
+  const [clearingHistory, setClearingHistory] = useState(false);
 
   useEffect(() => {
     api.health().then(setHealth).catch(() => null);
@@ -45,6 +46,28 @@ export default function App() {
       setLoading(false);
     }
   }, [objectiveText, runSettings]);
+
+  const handleClearHistory = async () => {
+    if (
+      !window.confirm(
+        'Delete all previous analyses? This permanently removes every saved objective and cannot be undone.',
+      )
+    ) {
+      return;
+    }
+
+    setError(null);
+    setClearingHistory(true);
+    try {
+      await api.clearObjectives();
+      setHistory([]);
+      setObjective(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to clear history');
+    } finally {
+      setClearingHistory(false);
+    }
+  };
 
   const loadObjective = async (id: number) => {
     setError(null);
@@ -100,7 +123,19 @@ export default function App() {
 
           <aside>
             <div className="card sticky top-4">
-              <h3 className="mb-3 font-semibold text-slate-900">Recent Objectives</h3>
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <h3 className="font-semibold text-slate-900">Recent Objectives</h3>
+                {history.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleClearHistory}
+                    disabled={clearingHistory}
+                    className="shrink-0 text-xs font-medium text-red-600 transition hover:text-red-700 disabled:opacity-50"
+                  >
+                    {clearingHistory ? 'Clearing…' : 'Clear all'}
+                  </button>
+                )}
+              </div>
               {history.length === 0 ? (
                 <p className="text-sm text-slate-400">No previous analyses yet.</p>
               ) : (

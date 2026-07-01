@@ -77,6 +77,17 @@ def list_objectives(db: Session = Depends(get_db)):
     )
 
 
+@router.delete("")
+def clear_objectives(db: Session = Depends(get_db)):
+    """Permanently delete all objectives and related analysis data."""
+    objectives = db.query(Objective).all()
+    count = len(objectives)
+    for objective in objectives:
+        db.delete(objective)
+    db.commit()
+    return {"deleted": count}
+
+
 @router.get("/{objective_id}", response_model=ObjectiveOut)
 def get_objective(objective_id: int, db: Session = Depends(get_db)):
     objective = (
