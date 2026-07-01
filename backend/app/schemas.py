@@ -165,6 +165,7 @@ class HealthOut(BaseModel):
     x_api_configured: bool
     anthropic_configured: bool
     openai_configured: bool = False
+    openai_key_last4: str = ""
     image_generation_ready: bool = False
     reddit_configured: bool = False
     arxiv_configured: bool = True

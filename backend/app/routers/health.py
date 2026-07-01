@@ -25,6 +25,7 @@ def health_check():
             settings.anthropic_api_key and settings.anthropic_api_key != "your_anthropic_api_key_here"
         ),
         openai_configured=image_service.is_configured,
+        openai_key_last4=image_service.key_last4 if image_service.is_configured else "",
         image_generation_ready=image_service.is_configured and image_service.prompt_engine_available,
         reddit_configured=reddit_source.is_configured,
         arxiv_configured=arxiv_source.is_configured,

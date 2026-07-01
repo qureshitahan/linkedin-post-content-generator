@@ -7,6 +7,7 @@ on demand only (when the user clicks Generate — never automatic).
 
 import base64
 import logging
+import os
 import re
 import uuid
 from pathlib import Path
@@ -21,7 +22,28 @@ from app.services.claude import claude_service
 logger = logging.getLogger(__name__)
 
 IMAGES_DIR = Path(__file__).resolve().parent.parent.parent / "generated_images"
-OPENAI_PLACEHOLDER = "your_openai_api_key_here"
+OPENAI_PLACEHOLDERS = frozenset(
+    {
+        "",
+        "your_openai_api_key_here",
+        "none",
+        "null",
+        "undefined",
+        "paste from backend/.env",
+    }
+)
+
+
+def resolve_openai_api_key() -> str:
+    """Prefer process env (Azure App Settings) over pydantic-loaded settings."""
+    return (os.environ.get("OPENAI_API_KEY") or settings.openai_api_key or "").strip()
+
+
+def is_valid_openai_api_key(key: str) -> bool:
+    normalized = key.strip().lower()
+    if normalized in OPENAI_PLACEHOLDERS:
+        return False
+    return key.startswith("sk-")
 
 LINKEDIN_IMAGE_SYSTEM = """You write image generation prompts for professional LinkedIn posts.
 Output ONLY the prompt text — no quotes, no preamble, no markdown.
@@ -43,13 +65,27 @@ Rules for every prompt:
 class ImageService:
     def __init__(self):
         self._client: Optional[OpenAI] = None
-        if self.is_configured:
-            self._client = OpenAI(api_key=settings.openai_api_key)
+        self._client_key: str = ""
 
     @property
     def is_configured(self) -> bool:
-        key = settings.openai_api_key
-        return bool(key and key != OPENAI_PLACEHOLDER)
+        return is_valid_openai_api_key(resolve_openai_api_key())
+
+    @property
+    def key_last4(self) -> str:
+        key = resolve_openai_api_key()
+        return key[-4:] if len(key) >= 4 else ""
+
+    def _get_client(self) -> OpenAI:
+        key = resolve_openai_api_key()
+        if not is_valid_openai_api_key(key):
+            raise RuntimeError(
+                "OpenAI API key is not configured. Add OPENAI_API_KEY to .env for image generation."
+            )
+        if self._client is None or self._client_key != key:
+            self._client = OpenAI(api_key=key)
+            self._client_key = key
+        return self._client
 
     @property
     def prompt_engine_available(self) -> bool:
@@ -163,10 +199,7 @@ Output ONLY the new prompt."""
         user_hint: str = "",
     ) -> dict:
         """Generate or revise an image. Returns local URL + prompt used."""
-        if not self.is_configured or not self._client:
-            raise RuntimeError(
-                "OpenAI API key is not configured. Add OPENAI_API_KEY to .env for image generation."
-            )
+        client = self._get_client()
 
         if mode == "edit" and (previous_prompt or edit_instruction):
             final_prompt = await self.craft_edit_prompt(
@@ -192,7 +225,7 @@ Output ONLY the new prompt."""
         final_prompt = final_prompt[:4000]
 
         try:
-            response = self._client.images.generate(
+            response = client.images.generate(
                 model=settings.openai_image_model,
                 prompt=final_prompt,
                 size=settings.openai_image_size,
