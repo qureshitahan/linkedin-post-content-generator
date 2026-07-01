@@ -29,6 +29,13 @@ export function formatApiErrorDetail(detail: unknown, status?: number): string {
   return status ? `Request failed (${status}). Please try again.` : 'Request failed. Please try again.';
 }
 
+export function friendlyApiError(message: string): string {
+  if (message === 'Not Found') {
+    return 'The server does not have this feature yet. Hard refresh the page, or wait a minute if a deploy just finished.';
+  }
+  return message;
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
     headers: { 'Content-Type': 'application/json' },

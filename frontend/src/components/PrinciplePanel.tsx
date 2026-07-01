@@ -28,7 +28,7 @@ export default function PrinciplePanel({ principles, selectedId, onChange }: Pro
       setCreating(false);
       onChange();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create principle');
+      setError(friendlyApiError(err instanceof Error ? err.message : 'Failed to create principle'));
     }
   };
 
