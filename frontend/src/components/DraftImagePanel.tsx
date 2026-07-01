@@ -76,8 +76,8 @@ export default function DraftImagePanel({
 
       {!imageGenerationReady && (
         <p className="mb-3 text-xs text-amber-700">
-          Image generation needs an OpenAI API key. Claude reads this exact draft, writes the prompt,
-          and OpenAI renders the image.
+          Generates a designed LinkedIn slide — headline text, stats, charts, or flat illustrations.
+          Not AI photos.
         </p>
       )}
 
@@ -89,13 +89,13 @@ export default function DraftImagePanel({
           <textarea
             value={promptHint}
             onChange={(e) => setPromptHint(e.target.value)}
-            placeholder="e.g. district manager reviewing pharmacy locations, research desk with blurred charts, clean hook-style graphic…"
+            placeholder="e.g. stat card with the headline as large text, simple bar chart, navy slide design…"
             rows={2}
             className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 placeholder:text-slate-400 focus:border-brand-400 focus:outline-none focus:ring-1 focus:ring-brand-400"
           />
           <p className="mt-1 text-xs text-slate-400">
-            Auto-prompt picks a LinkedIn-style image tied to this draft — workplace photo, research
-            scene, or clean hook graphic. Add a note to steer the setting.
+            Creates a polished slide-style graphic with your hook or key stat as text — like a LinkedIn
+            carousel. Charts and minimal illustrations are fine.
           </p>
         </div>
       )}
@@ -133,7 +133,7 @@ export default function DraftImagePanel({
             <textarea
               value={editInstruction}
               onChange={(e) => setEditInstruction(e.target.value)}
-              placeholder="e.g. show a district manager in a real pharmacy, more like a research desk with papers…"
+              placeholder="e.g. bigger headline text, add a simple chart, more minimal flat style…"
               rows={2}
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 placeholder:text-slate-400 focus:border-brand-400 focus:outline-none focus:ring-1 focus:ring-brand-400"
             />

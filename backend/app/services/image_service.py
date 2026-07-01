@@ -1,8 +1,6 @@
 """LinkedIn post image generation — Claude crafts prompts, OpenAI GPT Image renders.
 
-Anthropic does not generate images. We use Claude (cheap Haiku) to turn LinkedIn
-post text into a professional image prompt, then OpenAI's GPT Image model to render
-on demand only (when the user clicks Generate — never automatic).
+Design-first LinkedIn graphics (stat cards, charts, slides) — not photorealistic AI photos.
 """
 
 import base64
@@ -37,9 +35,85 @@ OPENAI_PLACEHOLDERS = frozenset(
     }
 )
 
+LINKEDIN_IMAGE_SYSTEM = """You write image generation prompts for polished LinkedIn post graphics.
+Output ONLY the prompt text — no quotes around the whole prompt, no preamble, no markdown.
+
+Design like a professional LinkedIn carousel slide or Canva template — NOT an AI photo.
+
+PREFERRED formats (pick ONE):
+- Stat card: large bold number or claim as typography on a clean solid/gradient background
+- Carousel slide: headline text + small flat icon or minimal illustration
+- Minimal chart: simple clean bar/line chart that supports the post's point
+- Flat illustration: simple vector-style drawing (healthcare, ops, business) — not photorealistic
+- Comparison graphic: two-column or before/after using flat shapes, not photos
+
+TEXT ON IMAGE (encouraged):
+- Include a short headline or stat from the post (max ~10 words)
+- Spell the exact text clearly in the prompt so the model renders it
+- Large readable sans-serif typography, high contrast
+
+AVOID (looks fake on LinkedIn):
+- Photorealistic people, faces, hands, or "documentary" workplace photos
+- Random metaphors (sand, fog, bridges, puzzle pieces, surreal scenes)
+- Generic org charts with icon nodes and connecting lines
+- Overly cinematic or artsy imagery
+
+Style rules:
+- Flat design, clean layout, generous whitespace
+- Professional palette: navy, white, teal, soft gray, one accent color
+- Landscape 16:9, looks like a designed social graphic — crisp and intentional
+- No logos or watermarks"""
+
+ORG_CHART_PROMPT_TERMS = (
+    "organizational chart",
+    "org chart",
+    "supervisor node",
+    "executive node",
+    "location icons connected",
+    "icon cluster",
+    "scattered icons connected by lines",
+)
+
+PHOTO_SLOP_TERMS = (
+    "photorealistic person",
+    "realistic human",
+    "human face",
+    "documentary photograph",
+    "editorial photograph",
+    "cinematic",
+    "film still",
+    "sand ",
+    " sand",
+    "foggy",
+    "puzzle piece",
+    "empty bridge",
+    "golden hour portrait",
+    "over-the-shoulder photo",
+    "silhouette standing",
+)
+
+LINKEDIN_VISUAL_FORMATS = (
+    "stat_card — bold stat or claim as large typography (best when post has numbers or a punchy hook)",
+    "carousel_slide — LinkedIn slide with headline text and a small flat illustration",
+    "minimal_chart — clean simple chart supporting the post's argument",
+    "flat_illustration — minimal vector drawing related to the topic",
+    "comparison_graphic — flat side-by-side showing the contrast in the post",
+    "quote_hook — large headline text from the post on a professional background",
+)
+
+FORMAT_DEFAULT = "carousel_slide"
+
+DRAFT_STYLE_VISUALS = {
+    "provocative": "Bold hook slide — large provocative headline text, strong color block, minimal accent graphic.",
+    "analytical": "Evidence-led — stat, chart, or data-forward slide with clean typography.",
+    "story": "Personal POV — quote-style headline with warm flat illustration, not a photo.",
+    "curious": "Question-led — big question text on clean background with simple icon.",
+    "actionable": "Practical takeaway — checklist-style or step graphic with clear headline.",
+    "general": "Professional LinkedIn carousel slide tied to the post hook.",
+}
+
 
 def resolve_openai_api_key() -> str:
-    """Prefer process env (Azure App Settings) over pydantic-loaded settings."""
     return (os.environ.get("OPENAI_API_KEY") or settings.openai_api_key or "").strip()
 
 
@@ -49,69 +123,14 @@ def is_valid_openai_api_key(key: str) -> bool:
         return False
     return key.startswith("sk-")
 
-LINKEDIN_IMAGE_SYSTEM = """You write image generation prompts for professional LinkedIn posts.
-Output ONLY the prompt text — no quotes, no preamble, no markdown.
 
-Think like someone picking a cover image before posting on LinkedIn — clear, relevant, professional.
-The reader should immediately see how the image connects to the post topic.
-
-GOOD LinkedIn post images (pick ONE):
-- A real workplace photo in the post's industry (pharmacy, clinic, hospital ops, boardroom, etc.)
-- Someone doing the job the post describes (over-shoulder, hands-only, or from behind — avoid front-facing faces)
-- A research / evidence scene: desk, laptop with blurred charts, papers, notebook, coffee — for analytical posts
-- A clean hook-style graphic: bold solid background color + 1–2 simple objects that match the headline idea (no text)
-- A topical before/after or side-by-side using REAL settings (e.g. chaotic vs standardized pharmacy back office)
-- An operational snapshot: team huddle, site visit, district manager reviewing locations on a tablet (screen blurred)
-
-AVOID:
-- Random metaphors unrelated to the post (sand, fog, empty bridges, puzzle pieces, surreal scenes)
-- Generic org charts with icon nodes, flowcharts, and scattered location icons connected by lines
-- Overly dramatic cinematic shots that don't match the post subject
-- Literal illustration of every sentence in the post
-
-Rules:
-- Ground every prompt in the post's industry, hook, and concrete subjects
-- Professional and credible — what you'd actually see on a LinkedIn feed
-- NO readable text, words, letters, logos, or watermarks
-- Landscape/wide composition"""
-
-# Only reject the org-chart / icon-cluster patterns users complained about — not all structured visuals.
-ORG_CHART_PROMPT_TERMS = (
-    "organizational chart",
-    "org chart",
-    "hierarchical diagram",
-    "supervisor node",
-    "executive node",
-    "location icons",
-    "icon cluster",
-    "scattered icons",
-    "connected by lines to",
-    "tree structure of",
-    "network diagram",
-)
-
-LINKEDIN_VISUAL_FORMATS = (
-    "topic_photo — professional photo in the industry setting the post discusses",
-    "workplace_scene — people working in the environment the post is about",
-    "research_evidence — desk/laptop/papers suggesting data, research, or analysis",
-    "hook_banner — clean bold background with simple objects illustrating the headline",
-    "topical_comparison — two real-world scenes showing the contrast in the post",
-    "operational_snapshot — one clear on-the-job moment the post describes",
-)
-
-DRAFT_STYLE_VISUALS = {
-    "provocative": "Bold hook — strong crop, high clarity, direct topical image that matches the opening claim.",
-    "analytical": "Evidence-led — research desk, data review, papers, laptop with blurred charts, clinical rigor.",
-    "story": "Personal POV — authentic practitioner moment in a real workplace, warm and human.",
-    "curious": "Question-led — intriguing but still topical scene that raises the post's question visually.",
-    "actionable": "Practical takeaway — hands-on work, checklist, team doing the thing the post recommends.",
-    "general": "Clear professional LinkedIn image directly tied to the post topic.",
-}
-
-
-def _is_org_chart_prompt(prompt: str) -> bool:
+def _is_bad_prompt(prompt: str) -> tuple[bool, str]:
     lowered = prompt.lower()
-    return any(term in lowered for term in ORG_CHART_PROMPT_TERMS)
+    if any(term in lowered for term in ORG_CHART_PROMPT_TERMS):
+        return True, "org chart icons"
+    if any(term in lowered for term in PHOTO_SLOP_TERMS):
+        return True, "photorealistic or metaphor slop"
+    return False, ""
 
 
 def _style_visual_mandate(draft_style: str) -> str:
@@ -121,34 +140,40 @@ def _style_visual_mandate(draft_style: str) -> str:
 def _draft_hook(draft_text: str) -> str:
     for line in draft_text.splitlines():
         stripped = line.strip()
-        if stripped:
-            return stripped[:200]
-    return draft_text[:200]
+        if stripped and not stripped.startswith("http"):
+            return stripped[:120]
+    return draft_text[:120]
 
 
 def _parse_visual_analysis(raw: str, draft_text: str) -> dict:
     cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw.strip(), flags=re.IGNORECASE)
+    hook = _draft_hook(draft_text)
+    defaults = {
+        "industry": "professional business",
+        "hook": hook,
+        "headline_text": hook[:80],
+        "stat_text": "",
+        "concrete_subjects": [],
+        "post_theme": "",
+        "recommended_format": FORMAT_DEFAULT,
+    }
     try:
         data = json.loads(cleaned)
         if isinstance(data, dict):
             return {
-                "industry": str(data.get("industry") or "professional business").strip(),
-                "hook": str(data.get("hook") or _draft_hook(draft_text)).strip(),
+                "industry": str(data.get("industry") or defaults["industry"]).strip(),
+                "hook": str(data.get("hook") or hook).strip(),
+                "headline_text": str(data.get("headline_text") or data.get("hook") or hook)[:80].strip(),
+                "stat_text": str(data.get("stat_text") or "").strip()[:40],
                 "concrete_subjects": [
                     str(s).strip() for s in (data.get("concrete_subjects") or []) if str(s).strip()
-                ][:8],
+                ][:6],
                 "post_theme": str(data.get("post_theme") or "").strip(),
-                "recommended_format": str(data.get("recommended_format") or "topic_photo").strip(),
+                "recommended_format": str(data.get("recommended_format") or FORMAT_DEFAULT).strip(),
             }
     except (json.JSONDecodeError, TypeError, ValueError):
         pass
-    return {
-        "industry": "professional business",
-        "hook": _draft_hook(draft_text),
-        "concrete_subjects": [],
-        "post_theme": "",
-        "recommended_format": "topic_photo",
-    }
+    return defaults
 
 
 def _analyze_draft_for_visual(draft_text: str, topic_name: str, draft_style: str) -> dict:
@@ -157,7 +182,7 @@ def _analyze_draft_for_visual(draft_text: str, topic_name: str, draft_style: str
 
     topic_block = f"\nTopic: {topic_name}" if topic_name else ""
     formats_block = "\n".join(f"- {fmt}" for fmt in LINKEDIN_VISUAL_FORMATS)
-    prompt = f"""Analyze this LinkedIn draft for image planning. Return JSON only.
+    prompt = f"""Analyze this LinkedIn draft for a DESIGNED graphic (not a photo). Return JSON only.
 {topic_block}
 Draft style: {draft_style or "general"}
 
@@ -169,25 +194,36 @@ Choose recommended_format from:
 
 Return exactly:
 {{
-  "industry": "e.g. healthcare, pharmacy, fintech",
-  "hook": "the opening hook or core claim in one line",
-  "concrete_subjects": ["specific nouns from the post to show visually"],
-  "post_theme": "one sentence on what the post is really about",
-  "recommended_format": "one format key e.g. topic_photo or research_evidence"
+  "industry": "e.g. healthcare, pharmacy",
+  "hook": "opening hook in one line",
+  "headline_text": "short text to display ON the image, max 10 words, from hook or key claim",
+  "stat_text": "key number or percentage if any, else empty string",
+  "concrete_subjects": ["2-4 visual subjects for a flat illustration, e.g. pharmacy, district manager"],
+  "post_theme": "one sentence summary",
+  "recommended_format": "e.g. stat_card or carousel_slide"
 }}"""
 
     try:
         raw = claude_service.complete(
             prompt=prompt,
-            system="Extract visual planning facts from LinkedIn posts. Return valid JSON only.",
+            system="Plan LinkedIn slide graphics. Return valid JSON only. Prefer stat_card when post has numbers.",
             model=settings.anthropic_model_fast,
-            max_tokens=350,
+            max_tokens=400,
             temperature=0.2,
         )
         return _parse_visual_analysis(raw, draft_text)
     except Exception as e:
         logger.warning(f"Visual analysis failed, using defaults: {e}")
         return _parse_visual_analysis("", draft_text)
+
+
+def _text_block(analysis: dict) -> str:
+    parts = []
+    if analysis.get("stat_text"):
+        parts.append(f'Stat to emphasize: "{analysis["stat_text"]}"')
+    if analysis.get("headline_text"):
+        parts.append(f'Headline text on image: "{analysis["headline_text"]}"')
+    return "\n".join(parts) if parts else f'Headline text on image: "{analysis.get("hook", "")[:80]}"'
 
 
 class ImageService:
@@ -227,60 +263,61 @@ class ImageService:
         draft_style: str = "",
         draft_label: str = "",
     ) -> str:
-        """Use Claude to build a LinkedIn-appropriate image prompt from post text."""
         hint_block = f"\nUser's visual preference: {user_hint}" if user_hint.strip() else ""
         topic_block = f"\nTopic: {topic_name}" if topic_name else ""
         style_key = draft_style.strip().lower() or "general"
         label = draft_label.strip() or style_key.replace("_", " ").title()
         analysis = _analyze_draft_for_visual(draft_text, topic_name, style_key)
-        subjects = ", ".join(analysis["concrete_subjects"]) or "key objects and settings from the post"
+        subjects = ", ".join(analysis["concrete_subjects"]) or analysis["industry"]
         rejection_note = ""
 
         if claude_service.is_configured:
             for attempt in range(3):
-                prompt = f"""Write one image generation prompt for this LinkedIn post.
+                prompt = f"""Write one image generation prompt for a LinkedIn post graphic.
 {topic_block}
 
-POST ANALYSIS (stay faithful to this):
+POST ANALYSIS:
 - Industry: {analysis['industry']}
-- Hook: {analysis['hook']}
-- Theme: {analysis['post_theme'] or 'See draft below'}
-- Show visually: {subjects}
-- Recommended format: {analysis['recommended_format']}
+- Theme: {analysis['post_theme'] or analysis['hook']}
+- Format: {analysis['recommended_format']}
 - Draft style ({label}): {_style_visual_mandate(style_key)}
+- Illustration subjects (flat, not photos): {subjects}
+{_text_block(analysis)}
 
 FULL DRAFT:
-{draft_text[:2200]}
+{draft_text[:2000]}
 {hint_block}
 {rejection_note}
 
 Instructions:
-- The image must clearly relate to THIS post — a LinkedIn reader should instantly get the connection
-- Use the recommended format; pick a single clear scene, not a literal bullet-by-bullet illustration
-- Look like real LinkedIn content: professional, grounded, not artsy or overly dramatic
-- Use real industry settings and objects from the post (pharmacy, clinic, ops desk, etc.)
-- NO readable text, logos, or watermarks
-- NO generic org charts with icon nodes — use real workplaces instead
-- Include setting, subjects, composition, lighting, and color palette"""
+- Design a polished LinkedIn carousel slide / social graphic — flat design, NOT a photo
+- Include the headline text (and stat if provided) spelled exactly in the prompt
+- Simple clean layout: bold typography, solid or gradient background, optional minimal chart or icon
+- Must clearly relate to this post's topic and hook
+- NO photorealistic people, faces, hands, or random metaphors
+- NO org-chart icon diagrams
+- Specify colors, layout, and typography style (clean sans-serif, professional)"""
 
                 try:
                     result = claude_service.complete(
                         prompt=prompt,
                         system=LINKEDIN_IMAGE_SYSTEM,
                         model=settings.anthropic_model,
-                        max_tokens=500,
-                        temperature=0.85,
+                        max_tokens=550,
+                        temperature=0.75,
                     ).strip()
-                    if not _is_org_chart_prompt(result):
+                    bad, reason = _is_bad_prompt(result)
+                    if not bad:
                         return result
                     logger.warning(
-                        "Rejected org-chart image prompt (attempt %s, style=%s)",
+                        "Rejected image prompt (%s, attempt %s, style=%s)",
+                        reason,
                         attempt + 1,
                         style_key,
                     )
                     rejection_note = (
-                        "\nCRITICAL: Do not use org charts or icon-node diagrams. "
-                        "Use a real workplace photo or research desk scene tied to the post."
+                        "\nCRITICAL: Previous attempt was rejected. Create a flat LinkedIn slide graphic "
+                        "with headline text — no photos, no sand/fog/metaphors, no org-chart icons."
                     )
                 except Exception as e:
                     logger.warning(f"Claude image prompt failed, using fallback: {e}")
@@ -295,12 +332,11 @@ Instructions:
         draft_text: str = "",
         draft_style: str = "",
     ) -> str:
-        """Revise an existing image prompt based on user feedback."""
         if claude_service.is_configured:
             style_note = _style_visual_mandate(draft_style) if draft_style else ""
             rejection_note = ""
             for attempt in range(3):
-                prompt = f"""Revise this image prompt based on the user's feedback.
+                prompt = f"""Revise this LinkedIn graphic prompt based on user feedback.
 
 ORIGINAL PROMPT:
 {previous_prompt}
@@ -308,13 +344,13 @@ ORIGINAL PROMPT:
 USER REQUESTED CHANGES:
 {edit_instruction}
 
-LINKEDIN POST (for context):
+POST (context):
 {draft_text[:800]}
-{f"Style mandate: {style_note}" if style_note else ""}
+{f"Style: {style_note}" if style_note else ""}
 {rejection_note}
 
-If the user wants an entirely new image, create a fresh prompt grounded in the post topic.
-Use real industry settings — not random metaphors or org-chart icons.
+Keep it a designed LinkedIn slide/graphic — flat, professional, text allowed.
+No photorealistic photos or random metaphors.
 Output ONLY the new prompt."""
 
                 try:
@@ -322,20 +358,20 @@ Output ONLY the new prompt."""
                         prompt=prompt,
                         system=LINKEDIN_IMAGE_SYSTEM,
                         model=settings.anthropic_model,
-                        max_tokens=500,
-                        temperature=0.85,
+                        max_tokens=550,
+                        temperature=0.75,
                     ).strip()
-                    if not _is_org_chart_prompt(result):
+                    bad, _ = _is_bad_prompt(result)
+                    if not bad:
                         return result
                     rejection_note = (
-                        "\nCRITICAL: Use a real workplace or research scene tied to the post — no org charts."
+                        "\nCRITICAL: Use flat slide design with text — no AI photos or org charts."
                     )
                 except Exception as e:
                     logger.warning(f"Claude edit prompt failed: {e}")
                     break
 
-        combined = f"{previous_prompt}. Changes: {edit_instruction}"
-        return combined[:900]
+        return f"{previous_prompt}. Changes: {edit_instruction}"[:900]
 
     def _fallback_prompt(
         self,
@@ -345,17 +381,16 @@ Output ONLY the new prompt."""
         analysis: Optional[dict] = None,
     ) -> str:
         info = analysis or _parse_visual_analysis("", draft_text)
-        hook = info.get("hook") or _draft_hook(draft_text)
-        industry = info.get("industry") or "professional business"
-        subjects = ", ".join(info.get("concrete_subjects") or []) or hook
-        style_note = _style_visual_mandate(draft_style or "general")
+        headline = info.get("headline_text") or info.get("hook") or _draft_hook(draft_text)
+        stat = info.get("stat_text") or ""
+        industry = info.get("industry") or "business"
+        stat_part = f'Large stat text: "{stat}". ' if stat else ""
         base = (
-            f"Professional LinkedIn post image for {industry}. "
-            f"Clear, credible scene related to: {subjects}. "
-            f"Supports the hook: {hook}. "
-            f"Style: {style_note}. "
-            f"Real workplace or research setting, natural lighting, landscape format, "
-            f"no readable text, no logos, no org-chart icons."
+            f"Professional LinkedIn carousel slide graphic, flat design, {industry} topic. "
+            f"{stat_part}Headline text: \"{headline[:80]}\". "
+            f"Clean sans-serif typography on navy and white background, minimal flat icon, "
+            f"generous whitespace, 16:9 landscape, looks like a designed Canva template, "
+            f"not a photograph, no realistic people."
         )
         if user_hint.strip():
             base += f" {user_hint.strip()}"
@@ -387,7 +422,6 @@ Output ONLY the new prompt."""
         draft_label: str = "",
         user_hint: str = "",
     ) -> dict:
-        """Generate or revise an image. Returns local URL + prompt used."""
         client = self._get_client()
 
         if mode == "edit" and (previous_prompt or edit_instruction):
