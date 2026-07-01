@@ -8,6 +8,7 @@ on demand only (when the user clicks Generate — never automatic).
 import base64
 import logging
 import os
+import random
 import re
 import uuid
 from pathlib import Path
@@ -48,21 +49,44 @@ def is_valid_openai_api_key(key: str) -> bool:
         return False
     return key.startswith("sk-")
 
-LINKEDIN_IMAGE_SYSTEM = """You write image generation prompts for professional LinkedIn posts.
+LINKEDIN_IMAGE_SYSTEM = """You write vivid, creative image generation prompts for professional LinkedIn posts.
 Output ONLY the prompt text — no quotes, no preamble, no markdown.
 
-Rules for every prompt:
-- Professional LinkedIn feed aesthetic: clean, credible, not stock-photo cheesy
-- Must NOT look obviously AI-generated (avoid hyper-saturated, over-glossy, uncanny faces)
-- Suitable for a business/professional audience
-- NO text, words, letters, logos, or watermarks in the image (models render text poorly)
-- Landscape composition (wide format)
-- Can be: clean block diagram, architecture sketch, professional person at work,
-  abstract concept visualization, modern office/lab scene, data flow illustration,
-  minimalist infographic-style shapes (without labels)
-- Formal but visually interesting — should stop the scroll without looking like an ad
-- Muted, professional color palette unless the topic clearly calls for warmth
-- Photorealistic OR clean illustration/diagram — pick what fits the post topic best"""
+Your job is scroll-stopping visual storytelling — NOT generic corporate clip art.
+
+AVOID (these produce boring, repetitive images):
+- Flowcharts, process diagrams, before/after icon layouts
+- Scattered icons connected by lines and nodes
+- Flat minimalist business diagrams or infographic-style shapes
+- Literal illustrations of every bullet point in the post
+- Generic "corporate strategy documentation" or PowerPoint aesthetics
+
+PREFER (pick ONE approach — vary across generations):
+- Editorial photography: candid professional moment, dramatic natural light, real environment
+- Cinematic metaphor: one powerful scene symbolizing the post's tension or insight
+- Environmental storytelling: bridge, corridor, command center, dawn light, scale contrast
+- Hands-on detail: close-up of work in progress without faces front-and-center
+- Abstract art direction: bold color, texture, motion, negative space — still credible for LinkedIn
+- Documentary wide shot: show cohesion or fragmentation through place and light, not icon clusters
+
+Rules:
+- Professional LinkedIn audience — credible, not cheesy stock photo
+- NO text, words, letters, logos, watermarks (models render text poorly)
+- Landscape/wide composition
+- One clear focal concept — evocative, not exhaustive
+- Specify mood, lighting, color palette, camera angle, and artistic medium
+- Avoid uncanny AI faces; prefer silhouettes, over-shoulder, hands-only, or empty environments"""
+
+VISUAL_APPROACHES = (
+    "Editorial photograph with natural light and shallow depth of field",
+    "Cinematic wide shot using environment as metaphor",
+    "Close-up documentary detail — hands, tools, workspace texture",
+    "Architectural composition — corridors, bridges, skylines, scale contrast",
+    "Moody atmospheric scene — dawn, rain, golden hour, negative space",
+    "Abstract professional art — texture, gradient, geometric tension without icons",
+    "Over-the-shoulder workplace moment — authentic, not posed stock",
+    "Environmental portrait of a multi-site operation — shown through place, not diagrams",
+)
 
 
 class ImageService:
@@ -105,24 +129,31 @@ class ImageService:
         topic_block = f"\nTopic: {topic_name}" if topic_name else ""
 
         if claude_service.is_configured:
-            prompt = f"""Create an image generation prompt for this specific LinkedIn draft.
+            approach = random.choice(VISUAL_APPROACHES)
+            prompt = f"""Create a creative image generation prompt for this specific LinkedIn draft.
 {topic_block}
 
 DRAFT TEXT TO VISUALIZE:
 {draft_text[:2400]}
 {hint_block}
 
-The image must be based on THIS draft's specific hook, argument, proof point, and takeaway.
-If another draft on the same topic uses a different angle, this image should still feel distinct.
-Pick ONE strong visual concept (diagram, scene, or abstract representation) that supports the draft's point without literally illustrating every sentence."""
+Required visual approach for THIS image: {approach}
+
+Instructions:
+- Translate the post's core insight into a metaphorical or cinematic scene — not a literal diagram
+- Do NOT use flowcharts, icon clusters, before/after layouts, or process diagrams
+- Pick ONE strong visual concept that would stop someone scrolling on LinkedIn
+- Include specific art direction: mood, lighting, palette, camera angle, medium (photo vs illustration)
+- If the post mentions consolidation, leadership, or operations — show it through environment,
+  human scale, or metaphor (e.g. a lone figure on a bridge between two districts) rather than icons"""
 
             try:
                 return claude_service.complete(
                     prompt=prompt,
                     system=LINKEDIN_IMAGE_SYSTEM,
-                    model=settings.anthropic_model_fast,
-                    max_tokens=400,
-                    temperature=0.7,
+                    model=settings.anthropic_model,
+                    max_tokens=500,
+                    temperature=0.95,
                 )
             except Exception as e:
                 logger.warning(f"Claude image prompt failed, using fallback: {e}")
@@ -156,9 +187,9 @@ Output ONLY the new prompt."""
                 return claude_service.complete(
                     prompt=prompt,
                     system=LINKEDIN_IMAGE_SYSTEM,
-                    model=settings.anthropic_model_fast,
-                    max_tokens=450,
-                    temperature=0.7,
+                    model=settings.anthropic_model,
+                    max_tokens=500,
+                    temperature=0.9,
                 )
             except Exception as e:
                 logger.warning(f"Claude edit prompt failed: {e}")
@@ -168,10 +199,12 @@ Output ONLY the new prompt."""
 
     def _fallback_prompt(self, draft_text: str, user_hint: str) -> str:
         snippet = re.sub(r"\s+", " ", draft_text)[:400]
+        approach = random.choice(VISUAL_APPROACHES)
         base = (
-            f"Professional LinkedIn post header image, clean modern style, "
-            f"visually based on this draft's hook and main argument: {snippet}. "
-            f"No text, no logos, landscape format, muted professional colors."
+            f"Cinematic LinkedIn header image, {approach.lower()}. "
+            f"Evocative visual metaphor for this post's main idea: {snippet}. "
+            f"No text, no logos, no flowcharts or icon diagrams, landscape format, "
+            f"dramatic lighting, professional editorial quality."
         )
         if user_hint.strip():
             base += f" {user_hint.strip()}"

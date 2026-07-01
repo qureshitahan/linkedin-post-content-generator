@@ -87,13 +87,13 @@ export default function DraftImagePanel({
           <textarea
             value={promptHint}
             onChange={(e) => setPromptHint(e.target.value)}
-            placeholder="e.g. clean block diagram of an ML pipeline, professional healthcare setting, muted blues…"
+            placeholder="e.g. cinematic photo of a district manager on a bridge at dawn, editorial pharmacy interior, moody documentary style — avoid diagrams…"
             rows={2}
             className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 placeholder:text-slate-400 focus:border-brand-400 focus:outline-none focus:ring-1 focus:ring-brand-400"
           />
           <p className="mt-1 text-xs text-slate-400">
-            Leave blank to auto-generate from this draft's hook, argument, proof point, and takeaway.
-            Add a note only if you want to steer the visual style.
+            Leave blank for a creative auto-prompt (cinematic/editorial, not generic diagrams).
+            Add a note to steer mood, setting, or metaphor.
           </p>
         </div>
       )}
@@ -131,7 +131,7 @@ export default function DraftImagePanel({
             <textarea
               value={editInstruction}
               onChange={(e) => setEditInstruction(e.target.value)}
-              placeholder="e.g. make it a block diagram instead, add a hospital setting, use warmer tones, remove the person…"
+              placeholder="e.g. make it a cinematic photo instead of a diagram, warmer tones, show a real pharmacy corridor…"
               rows={2}
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 placeholder:text-slate-400 focus:border-brand-400 focus:outline-none focus:ring-1 focus:ring-brand-400"
             />
