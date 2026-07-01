@@ -41,6 +41,8 @@ export default function DraftImagePanel({
       const result = await api.generateImage(objectiveId, topicId, {
         draft_text: draft.text,
         topic_name: topicName,
+        draft_style: draft.style,
+        draft_label: draft.label,
         mode,
         custom_prompt: mode === 'new' ? promptHint : '',
         previous_prompt: mode === 'edit' && image ? image.promptUsed : '',

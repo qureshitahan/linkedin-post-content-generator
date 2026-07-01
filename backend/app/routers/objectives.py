@@ -303,6 +303,8 @@ async def generate_topic_image(
             edit_instruction=payload.edit_instruction or payload.custom_prompt,
             draft_text=payload.draft_text,
             topic_name=payload.topic_name or topic.name,
+            draft_style=payload.draft_style,
+            draft_label=payload.draft_label,
             user_hint=payload.custom_prompt if payload.mode == "new" else "",
         )
         return GenerateImageResponse(**result)

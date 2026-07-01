@@ -182,6 +182,8 @@ class HealthOut(BaseModel):
 class GenerateImageRequest(BaseModel):
     draft_text: str = Field(..., min_length=20, max_length=8000)
     topic_name: str = ""
+    draft_style: str = ""
+    draft_label: str = ""
     mode: Literal["new", "edit"] = "new"
     custom_prompt: str = ""
     previous_prompt: str = ""

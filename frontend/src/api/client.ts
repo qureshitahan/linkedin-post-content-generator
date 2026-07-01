@@ -130,6 +130,8 @@ export const api = {
     body: {
       draft_text: string;
       topic_name?: string;
+      draft_style?: string;
+      draft_label?: string;
       mode?: 'new' | 'edit';
       custom_prompt?: string;
       previous_prompt?: string;
