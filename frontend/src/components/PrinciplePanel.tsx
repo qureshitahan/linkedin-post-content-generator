@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { api } from '../api/client';
+import { api, friendlyApiError } from '../api/client';
 import type { Principle } from '../types';
 
 interface Props {
