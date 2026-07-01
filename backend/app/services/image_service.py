@@ -6,9 +6,9 @@ on demand only (when the user clicks Generate — never automatic).
 """
 
 import base64
+import json
 import logging
 import os
-import random
 import re
 import uuid
 from pathlib import Path
@@ -49,138 +49,145 @@ def is_valid_openai_api_key(key: str) -> bool:
         return False
     return key.startswith("sk-")
 
-LINKEDIN_IMAGE_SYSTEM = """You write vivid, scroll-stopping image generation prompts for professional LinkedIn posts.
+LINKEDIN_IMAGE_SYSTEM = """You write image generation prompts for professional LinkedIn posts.
 Output ONLY the prompt text — no quotes, no preamble, no markdown.
 
-You are an art director for editorial photography and cinematic visuals — NOT a PowerPoint designer.
+Think like someone picking a cover image before posting on LinkedIn — clear, relevant, professional.
+The reader should immediately see how the image connects to the post topic.
 
-FORBIDDEN — never use these concepts or words in your prompt:
-diagram, flowchart, hierarchical, organizational chart, org chart, blueprint, infographic,
-nodes, icon cluster, tree structure, tiers, layers of boxes, connected icons, location icons,
-process map, architecture diagram, minimalist diagram, business process diagram, network diagram,
-scattered icons, lines connecting boxes, supervisor nodes, executive node
+GOOD LinkedIn post images (pick ONE):
+- A real workplace photo in the post's industry (pharmacy, clinic, hospital ops, boardroom, etc.)
+- Someone doing the job the post describes (over-shoulder, hands-only, or from behind — avoid front-facing faces)
+- A research / evidence scene: desk, laptop with blurred charts, papers, notebook, coffee — for analytical posts
+- A clean hook-style graphic: bold solid background color + 1–2 simple objects that match the headline idea (no text)
+- A topical before/after or side-by-side using REAL settings (e.g. chaotic vs standardized pharmacy back office)
+- An operational snapshot: team huddle, site visit, district manager reviewing locations on a tablet (screen blurred)
 
-REQUIRED — every prompt must specify:
-- ONE photographic or cinematic scene (or bold abstract art) — not a chart
-- Medium: editorial photo, documentary film still, or fine-art abstract (pick one)
-- Mood, lighting, lens (wide / 35mm / macro), color palette
-- How it symbolizes the post's insight without literally listing every bullet
+AVOID:
+- Random metaphors unrelated to the post (sand, fog, empty bridges, puzzle pieces, surreal scenes)
+- Generic org charts with icon nodes, flowcharts, and scattered location icons connected by lines
+- Overly dramatic cinematic shots that don't match the post subject
+- Literal illustration of every sentence in the post
 
 Rules:
-- LinkedIn-professional but attention-grabbing — magazine cover energy, not clip art
-- NO text, words, letters, logos, watermarks
-- Landscape/wide composition
-- Avoid uncanny AI faces; use silhouettes, over-shoulder, hands-only, or empty environments"""
+- Ground every prompt in the post's industry, hook, and concrete subjects
+- Professional and credible — what you'd actually see on a LinkedIn feed
+- NO readable text, words, letters, logos, or watermarks
+- Landscape/wide composition"""
 
-BANNED_PROMPT_TERMS = (
-    "diagram",
-    "flowchart",
-    "hierarchical",
+# Only reject the org-chart / icon-cluster patterns users complained about — not all structured visuals.
+ORG_CHART_PROMPT_TERMS = (
     "organizational chart",
     "org chart",
-    "blueprint",
-    "infographic",
-    " icon ",
-    "icons",
-    "node",
-    "nodes",
-    "tree structure",
-    "tier",
-    "tiers",
-    "layers of",
-    "connected by line",
-    "connected by clean",
-    "location icon",
-    "process diagram",
-    "network diagram",
-    "architecture diagram",
-    "minimalist diagram",
-    "business process",
+    "hierarchical diagram",
     "supervisor node",
     "executive node",
-    "scattered",
-    "org chart",
+    "location icons",
+    "icon cluster",
+    "scattered icons",
+    "connected by lines to",
+    "tree structure of",
+    "network diagram",
+)
+
+LINKEDIN_VISUAL_FORMATS = (
+    "topic_photo — professional photo in the industry setting the post discusses",
+    "workplace_scene — people working in the environment the post is about",
+    "research_evidence — desk/laptop/papers suggesting data, research, or analysis",
+    "hook_banner — clean bold background with simple objects illustrating the headline",
+    "topical_comparison — two real-world scenes showing the contrast in the post",
+    "operational_snapshot — one clear on-the-job moment the post describes",
 )
 
 DRAFT_STYLE_VISUALS = {
-    "provocative": (
-        "Bold hook — high contrast, surprising, slightly provocative. "
-        "Magazine-cover tension. Strong color accent. Make someone stop scrolling."
-    ),
-    "analytical": (
-        "Evidence-led — investigative documentary mood. Cool tones, precise composition. "
-        "Imply rigor through real objects and light — never charts or data graphics."
-    ),
-    "story": (
-        "Personal POV — intimate documentary moment. Warm natural light, authentic workspace, "
-        "human scale from behind or silhouette."
-    ),
-    "curious": (
-        "Question-led — intriguing, slightly surreal single scene. Negative space, "
-        "one unexpected detail that provokes curiosity."
-    ),
-    "actionable": (
-        "Practical takeaway — dynamic hands-on action. Motion, tools, someone doing the work. "
-        "Energetic and immediate."
-    ),
-    "general": (
-        "Cinematic editorial metaphor — evocative, professional, never corporate clip art."
-    ),
-}
-
-STYLE_APPROACHES: dict[str, tuple[str, ...]] = {
-    "provocative": (
-        "Dramatic split-lighting photograph — chaos on one side, order on the other — real places not icons",
-        "Bold editorial still life: sand slipping through fingers on a polished boardroom table",
-        "High-contrast dawn highway overpass — lone figure between two city districts",
-        "Unsettling empty pharmacy aisle with one glowing warm section — cinematic wide shot",
-    ),
-    "analytical": (
-        "Investigative documentary: over-shoulder review of real ops binders and marked maps at night",
-        "Cool-toned macro of mismatched workflow printouts being aligned by hands",
-        "Wide shot of five identical storefronts with subtly different lighting — real street photography",
-        "Glass-walled ops room at dusk, screens glowing, no readable text — atmospheric rigor",
-    ),
-    "story": (
-        "Warm golden-hour over-shoulder of district lead walking a pharmacy floor with staff blurred",
-        "Documentary portrait from behind: manager on a regional road between two towns",
-        "Intimate close-up of coffee-stained notebook beside store keys — personal practitioner detail",
-        "Silhouette in doorway between back office and retail floor — human bridge moment",
-    ),
-    "curious": (
-        "Single empty bridge at foggy dawn — mysterious scale, no people",
-        "One mismatched chair in a row of identical pharmacy consultation rooms",
-        "Surreal but professional: twenty identical doors, one slightly ajar with warm light",
-        "Macro of two puzzle pieces that almost fit — metaphor on neutral background",
-    ),
-    "actionable": (
-        "Hands pinning a standardized checklist in a busy clinic back office — motion blur energy",
-        "Dynamic wide shot of team huddle in pharmacy stock room — candid documentary",
-        "Over-shoulder coaching moment: supervisor pointing at floor plan on wall — no readable text",
-        "Morning rollout: boxes being opened in sync across a bright retail back room",
-    ),
-    "general": (
-        "Cinematic editorial photograph with natural light and shallow depth of field",
-        "Moody atmospheric wide shot — dawn, rain, or golden hour negative space",
-        "Close-up documentary detail — hands, tools, workspace texture",
-        "Environmental metaphor — bridge, corridor, or horizon line — no icons",
-    ),
+    "provocative": "Bold hook — strong crop, high clarity, direct topical image that matches the opening claim.",
+    "analytical": "Evidence-led — research desk, data review, papers, laptop with blurred charts, clinical rigor.",
+    "story": "Personal POV — authentic practitioner moment in a real workplace, warm and human.",
+    "curious": "Question-led — intriguing but still topical scene that raises the post's question visually.",
+    "actionable": "Practical takeaway — hands-on work, checklist, team doing the thing the post recommends.",
+    "general": "Clear professional LinkedIn image directly tied to the post topic.",
 }
 
 
-def _is_diagram_like_prompt(prompt: str) -> bool:
-    lowered = f" {prompt.lower()} "
-    return any(term in lowered for term in BANNED_PROMPT_TERMS)
+def _is_org_chart_prompt(prompt: str) -> bool:
+    lowered = prompt.lower()
+    return any(term in lowered for term in ORG_CHART_PROMPT_TERMS)
 
 
 def _style_visual_mandate(draft_style: str) -> str:
     return DRAFT_STYLE_VISUALS.get(draft_style.strip().lower(), DRAFT_STYLE_VISUALS["general"])
 
 
-def _pick_approach(draft_style: str) -> str:
-    key = draft_style.strip().lower() if draft_style else "general"
-    pool = STYLE_APPROACHES.get(key, STYLE_APPROACHES["general"])
-    return random.choice(pool)
+def _draft_hook(draft_text: str) -> str:
+    for line in draft_text.splitlines():
+        stripped = line.strip()
+        if stripped:
+            return stripped[:200]
+    return draft_text[:200]
+
+
+def _parse_visual_analysis(raw: str, draft_text: str) -> dict:
+    cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw.strip(), flags=re.IGNORECASE)
+    try:
+        data = json.loads(cleaned)
+        if isinstance(data, dict):
+            return {
+                "industry": str(data.get("industry") or "professional business").strip(),
+                "hook": str(data.get("hook") or _draft_hook(draft_text)).strip(),
+                "concrete_subjects": [
+                    str(s).strip() for s in (data.get("concrete_subjects") or []) if str(s).strip()
+                ][:8],
+                "post_theme": str(data.get("post_theme") or "").strip(),
+                "recommended_format": str(data.get("recommended_format") or "topic_photo").strip(),
+            }
+    except (json.JSONDecodeError, TypeError, ValueError):
+        pass
+    return {
+        "industry": "professional business",
+        "hook": _draft_hook(draft_text),
+        "concrete_subjects": [],
+        "post_theme": "",
+        "recommended_format": "topic_photo",
+    }
+
+
+def _analyze_draft_for_visual(draft_text: str, topic_name: str, draft_style: str) -> dict:
+    if not claude_service.is_configured:
+        return _parse_visual_analysis("", draft_text)
+
+    topic_block = f"\nTopic: {topic_name}" if topic_name else ""
+    formats_block = "\n".join(f"- {fmt}" for fmt in LINKEDIN_VISUAL_FORMATS)
+    prompt = f"""Analyze this LinkedIn draft for image planning. Return JSON only.
+{topic_block}
+Draft style: {draft_style or "general"}
+
+Draft:
+{draft_text[:2200]}
+
+Choose recommended_format from:
+{formats_block}
+
+Return exactly:
+{{
+  "industry": "e.g. healthcare, pharmacy, fintech",
+  "hook": "the opening hook or core claim in one line",
+  "concrete_subjects": ["specific nouns from the post to show visually"],
+  "post_theme": "one sentence on what the post is really about",
+  "recommended_format": "one format key e.g. topic_photo or research_evidence"
+}}"""
+
+    try:
+        raw = claude_service.complete(
+            prompt=prompt,
+            system="Extract visual planning facts from LinkedIn posts. Return valid JSON only.",
+            model=settings.anthropic_model_fast,
+            max_tokens=350,
+            temperature=0.2,
+        )
+        return _parse_visual_analysis(raw, draft_text)
+    except Exception as e:
+        logger.warning(f"Visual analysis failed, using defaults: {e}")
+        return _parse_visual_analysis("", draft_text)
 
 
 class ImageService:
@@ -225,31 +232,36 @@ class ImageService:
         topic_block = f"\nTopic: {topic_name}" if topic_name else ""
         style_key = draft_style.strip().lower() or "general"
         label = draft_label.strip() or style_key.replace("_", " ").title()
-        style_block = (
-            f"\nDRAFT STYLE: {label} ({style_key})\n"
-            f"Visual mandate: {_style_visual_mandate(style_key)}"
-        )
-        approach = _pick_approach(style_key)
+        analysis = _analyze_draft_for_visual(draft_text, topic_name, style_key)
+        subjects = ", ".join(analysis["concrete_subjects"]) or "key objects and settings from the post"
         rejection_note = ""
 
         if claude_service.is_configured:
             for attempt in range(3):
-                prompt = f"""Create a scroll-stopping image generation prompt for this LinkedIn draft.
+                prompt = f"""Write one image generation prompt for this LinkedIn post.
 {topic_block}
-{style_block}
 
-DRAFT TEXT (extract the emotional insight — do NOT illustrate it as a chart):
-{draft_text[:2400]}
+POST ANALYSIS (stay faithful to this):
+- Industry: {analysis['industry']}
+- Hook: {analysis['hook']}
+- Theme: {analysis['post_theme'] or 'See draft below'}
+- Show visually: {subjects}
+- Recommended format: {analysis['recommended_format']}
+- Draft style ({label}): {_style_visual_mandate(style_key)}
+
+FULL DRAFT:
+{draft_text[:2200]}
 {hint_block}
-
-Required scene direction: {approach}
 {rejection_note}
 
 Instructions:
-- Match the draft STYLE visually — provocative drafts should feel bold; analytical drafts feel investigative
-- Use ONE cinematic or editorial photograph — never diagrams, org charts, icons, or node layouts
-- Symbolize consolidation/leadership through place, light, people, or metaphor — not boxes and lines
-- Include: medium (photo/film still), mood, lighting, lens, palette, composition"""
+- The image must clearly relate to THIS post — a LinkedIn reader should instantly get the connection
+- Use the recommended format; pick a single clear scene, not a literal bullet-by-bullet illustration
+- Look like real LinkedIn content: professional, grounded, not artsy or overly dramatic
+- Use real industry settings and objects from the post (pharmacy, clinic, ops desk, etc.)
+- NO readable text, logos, or watermarks
+- NO generic org charts with icon nodes — use real workplaces instead
+- Include setting, subjects, composition, lighting, and color palette"""
 
                 try:
                     result = claude_service.complete(
@@ -257,24 +269,24 @@ Instructions:
                         system=LINKEDIN_IMAGE_SYSTEM,
                         model=settings.anthropic_model,
                         max_tokens=500,
-                        temperature=1.0,
+                        temperature=0.85,
                     ).strip()
-                    if not _is_diagram_like_prompt(result):
+                    if not _is_org_chart_prompt(result):
                         return result
                     logger.warning(
-                        "Rejected diagram-like image prompt (attempt %s, style=%s)",
+                        "Rejected org-chart image prompt (attempt %s, style=%s)",
                         attempt + 1,
                         style_key,
                     )
                     rejection_note = (
-                        "\nCRITICAL: Your last attempt used forbidden diagram/chart language. "
-                        "Write a purely photographic cinematic scene with zero diagrams or icons."
+                        "\nCRITICAL: Do not use org charts or icon-node diagrams. "
+                        "Use a real workplace photo or research desk scene tied to the post."
                     )
                 except Exception as e:
                     logger.warning(f"Claude image prompt failed, using fallback: {e}")
                     break
 
-        return self._fallback_prompt(draft_text, user_hint, draft_style)
+        return self._fallback_prompt(draft_text, user_hint, draft_style, analysis)
 
     async def craft_edit_prompt(
         self,
@@ -301,8 +313,8 @@ LINKEDIN POST (for context):
 {f"Style mandate: {style_note}" if style_note else ""}
 {rejection_note}
 
-If the user wants an entirely new image, create a fresh photographic/cinematic prompt.
-Never use diagrams, org charts, icons, nodes, or flowcharts.
+If the user wants an entirely new image, create a fresh prompt grounded in the post topic.
+Use real industry settings — not random metaphors or org-chart icons.
 Output ONLY the new prompt."""
 
                 try:
@@ -311,12 +323,12 @@ Output ONLY the new prompt."""
                         system=LINKEDIN_IMAGE_SYSTEM,
                         model=settings.anthropic_model,
                         max_tokens=500,
-                        temperature=0.95,
+                        temperature=0.85,
                     ).strip()
-                    if not _is_diagram_like_prompt(result):
+                    if not _is_org_chart_prompt(result):
                         return result
                     rejection_note = (
-                        "\nCRITICAL: Remove all diagram/chart/icon language. Use a photographic scene only."
+                        "\nCRITICAL: Use a real workplace or research scene tied to the post — no org charts."
                     )
                 except Exception as e:
                     logger.warning(f"Claude edit prompt failed: {e}")
@@ -325,14 +337,25 @@ Output ONLY the new prompt."""
         combined = f"{previous_prompt}. Changes: {edit_instruction}"
         return combined[:900]
 
-    def _fallback_prompt(self, draft_text: str, user_hint: str, draft_style: str = "") -> str:
-        snippet = re.sub(r"\s+", " ", draft_text)[:300]
-        approach = _pick_approach(draft_style or "general")
+    def _fallback_prompt(
+        self,
+        draft_text: str,
+        user_hint: str,
+        draft_style: str = "",
+        analysis: Optional[dict] = None,
+    ) -> str:
+        info = analysis or _parse_visual_analysis("", draft_text)
+        hook = info.get("hook") or _draft_hook(draft_text)
+        industry = info.get("industry") or "professional business"
+        subjects = ", ".join(info.get("concrete_subjects") or []) or hook
+        style_note = _style_visual_mandate(draft_style or "general")
         base = (
-            f"Cinematic editorial photograph for LinkedIn, {approach}. "
-            f"Visual metaphor inspired by: {snippet}. "
-            f"Photorealistic documentary style, dramatic natural lighting, wide landscape format, "
-            f"no text, no logos, absolutely no diagrams charts icons or organizational graphics."
+            f"Professional LinkedIn post image for {industry}. "
+            f"Clear, credible scene related to: {subjects}. "
+            f"Supports the hook: {hook}. "
+            f"Style: {style_note}. "
+            f"Real workplace or research setting, natural lighting, landscape format, "
+            f"no readable text, no logos, no org-chart icons."
         )
         if user_hint.strip():
             base += f" {user_hint.strip()}"

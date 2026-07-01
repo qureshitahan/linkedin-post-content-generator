@@ -89,13 +89,13 @@ export default function DraftImagePanel({
           <textarea
             value={promptHint}
             onChange={(e) => setPromptHint(e.target.value)}
-            placeholder="e.g. cinematic photo of a district manager on a bridge at dawn, editorial pharmacy interior, moody documentary style — avoid diagrams…"
+            placeholder="e.g. district manager reviewing pharmacy locations, research desk with blurred charts, clean hook-style graphic…"
             rows={2}
             className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 placeholder:text-slate-400 focus:border-brand-400 focus:outline-none focus:ring-1 focus:ring-brand-400"
           />
           <p className="mt-1 text-xs text-slate-400">
-            Leave blank for a creative auto-prompt (cinematic/editorial, not generic diagrams).
-            Add a note to steer mood, setting, or metaphor.
+            Auto-prompt picks a LinkedIn-style image tied to this draft — workplace photo, research
+            scene, or clean hook graphic. Add a note to steer the setting.
           </p>
         </div>
       )}
@@ -133,7 +133,7 @@ export default function DraftImagePanel({
             <textarea
               value={editInstruction}
               onChange={(e) => setEditInstruction(e.target.value)}
-              placeholder="e.g. make it a cinematic photo instead of a diagram, warmer tones, show a real pharmacy corridor…"
+              placeholder="e.g. show a district manager in a real pharmacy, more like a research desk with papers…"
               rows={2}
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 placeholder:text-slate-400 focus:border-brand-400 focus:outline-none focus:ring-1 focus:ring-brand-400"
             />
