@@ -3,6 +3,13 @@ import type { HealthStatus, Objective, Principle, RunSettings, Topic } from '../
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? '/api';
 export const MAX_OBJECTIVE_LENGTH = 15000;
 
+/** Turn `/api/images/...` into a full URL when frontend and API are on different hosts. */
+export function resolveApiAssetUrl(path: string): string {
+  if (!path || /^https?:\/\//i.test(path)) return path;
+  const origin = API_BASE.replace(/\/api\/?$/, '');
+  return path.startsWith('/') ? `${origin}${path}` : `${origin}/${path}`;
+}
+
 export function formatApiErrorDetail(detail: unknown, status?: number): string {
   if (typeof detail === 'string') return detail;
 
@@ -117,7 +124,7 @@ export const api = {
       body: JSON.stringify({ styles }),
     }),
 
-  generateImage: (
+  generateImage: async (
     objectiveId: number,
     topicId: number,
     body: {
@@ -128,9 +135,11 @@ export const api = {
       previous_prompt?: string;
       edit_instruction?: string;
     },
-  ) =>
-    request<{ image_url: string; prompt_used: string; filename: string }>(
+  ) => {
+    const result = await request<{ image_url: string; prompt_used: string; filename: string }>(
       `/objectives/${objectiveId}/topics/${topicId}/generate-image`,
       { method: 'POST', body: JSON.stringify(body) },
-    ),
+    );
+    return { ...result, image_url: resolveApiAssetUrl(result.image_url) };
+  },
 };

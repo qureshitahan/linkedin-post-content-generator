@@ -21,7 +21,10 @@ from app.services.claude import claude_service
 
 logger = logging.getLogger(__name__)
 
-IMAGES_DIR = Path(__file__).resolve().parent.parent.parent / "generated_images"
+AZURE_IMAGES_DIR = Path("/home/site/data/generated_images")
+LOCAL_IMAGES_DIR = Path(__file__).resolve().parent.parent.parent / "generated_images"
+IMAGES_DIR = AZURE_IMAGES_DIR if Path("/home/site/data").is_dir() else LOCAL_IMAGES_DIR
+IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 OPENAI_PLACEHOLDERS = frozenset(
     {
         "",
