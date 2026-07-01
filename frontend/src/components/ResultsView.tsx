@@ -1,5 +1,4 @@
 import type { Objective } from '../types';
-import { DEFAULT_RUN_SETTINGS } from './DiscoverRunSettings';
 import SearchQueriesPanel from './SearchQueriesPanel';
 import TopicCard from './TopicCard';
 
@@ -40,9 +39,6 @@ export default function ResultsView({ objective, imageGenerationReady = false }:
     .filter(Boolean)
     .map((s) => SOURCE_NAMES[s] || s);
 
-  const draftStyles =
-    objective.run_settings?.draft_styles ?? DEFAULT_RUN_SETTINGS.draft_styles;
-
   return (
     <div className="space-y-6">
       <div className="card bg-gradient-to-r from-brand-50 to-white">
@@ -73,7 +69,6 @@ export default function ResultsView({ objective, imageGenerationReady = false }:
                 rank={i + 1}
                 objectiveId={objective.id}
                 imageGenerationReady={imageGenerationReady}
-                defaultDraftStyles={draftStyles}
               />
             ))}
           </div>

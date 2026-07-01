@@ -27,7 +27,7 @@ def get_db():
 # New columns added after the initial schema. create_all() won't ALTER existing
 # SQLite tables, so we patch them in for already-created databases.
 _ADDED_COLUMNS = {
-    "objectives": {"sources_used": "VARCHAR(255)", "run_settings": "TEXT"},
+    "objectives": {"sources_used": "VARCHAR(255)", "run_settings": "TEXT", "principle_id": "INTEGER"},
     "topics": {
         "relevance_score": "FLOAT DEFAULT 0.0",
         "sources_summary": "VARCHAR(255)",

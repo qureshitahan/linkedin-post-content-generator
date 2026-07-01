@@ -1,10 +1,11 @@
-"""LinkedIn post image generation — Claude crafts prompts, OpenAI DALL-E renders.
+"""LinkedIn post image generation — Claude crafts prompts, OpenAI GPT Image renders.
 
 Anthropic does not generate images. We use Claude (cheap Haiku) to turn LinkedIn
-post text into a professional image prompt, then DALL-E 3 to render on demand only
-(when the user clicks Generate — never automatic).
+post text into a professional image prompt, then OpenAI's GPT Image model to render
+on demand only (when the user clicks Generate — never automatic).
 """
 
+import base64
 import logging
 import re
 import uuid
@@ -22,14 +23,14 @@ logger = logging.getLogger(__name__)
 IMAGES_DIR = Path(__file__).resolve().parent.parent.parent / "generated_images"
 OPENAI_PLACEHOLDER = "your_openai_api_key_here"
 
-LINKEDIN_IMAGE_SYSTEM = """You write DALL-E 3 image prompts for professional LinkedIn posts.
+LINKEDIN_IMAGE_SYSTEM = """You write image generation prompts for professional LinkedIn posts.
 Output ONLY the prompt text — no quotes, no preamble, no markdown.
 
 Rules for every prompt:
 - Professional LinkedIn feed aesthetic: clean, credible, not stock-photo cheesy
 - Must NOT look obviously AI-generated (avoid hyper-saturated, over-glossy, uncanny faces)
 - Suitable for a business/professional audience
-- NO text, words, letters, logos, or watermarks in the image (DALL-E renders text poorly)
+- NO text, words, letters, logos, or watermarks in the image (models render text poorly)
 - Landscape composition (wide format)
 - Can be: clean block diagram, architecture sketch, professional person at work,
   abstract concept visualization, modern office/lab scene, data flow illustration,
@@ -60,20 +61,21 @@ class ImageService:
         topic_name: str = "",
         user_hint: str = "",
     ) -> str:
-        """Use Claude to build a LinkedIn-appropriate DALL-E prompt from post text."""
+        """Use Claude to build a LinkedIn-appropriate image prompt from post text."""
         hint_block = f"\nUser's visual preference: {user_hint}" if user_hint.strip() else ""
         topic_block = f"\nTopic: {topic_name}" if topic_name else ""
 
         if claude_service.is_configured:
-            prompt = f"""Create a DALL-E 3 image prompt for this LinkedIn post.
+            prompt = f"""Create an image generation prompt for this specific LinkedIn draft.
 {topic_block}
 
-POST TEXT:
-{draft_text[:1200]}
+DRAFT TEXT TO VISUALIZE:
+{draft_text[:2400]}
 {hint_block}
 
-The image should visually support the post's main idea — not literally illustrate every sentence.
-Pick ONE strong visual concept (diagram, scene, or abstract representation)."""
+The image must be based on THIS draft's specific hook, argument, proof point, and takeaway.
+If another draft on the same topic uses a different angle, this image should still feel distinct.
+Pick ONE strong visual concept (diagram, scene, or abstract representation) that supports the draft's point without literally illustrating every sentence."""
 
             try:
                 return claude_service.complete(
@@ -96,7 +98,7 @@ Pick ONE strong visual concept (diagram, scene, or abstract representation)."""
     ) -> str:
         """Revise an existing image prompt based on user feedback."""
         if claude_service.is_configured:
-            prompt = f"""Revise this DALL-E image prompt based on the user's feedback.
+            prompt = f"""Revise this image prompt based on the user's feedback.
 
 ORIGINAL PROMPT:
 {previous_prompt}
@@ -126,15 +128,28 @@ Output ONLY the new prompt."""
         return combined[:900]
 
     def _fallback_prompt(self, draft_text: str, user_hint: str) -> str:
-        snippet = re.sub(r"\s+", " ", draft_text)[:200]
+        snippet = re.sub(r"\s+", " ", draft_text)[:400]
         base = (
             f"Professional LinkedIn post header image, clean modern style, "
-            f"concept related to: {snippet}. "
+            f"visually based on this draft's hook and main argument: {snippet}. "
             f"No text, no logos, landscape format, muted professional colors."
         )
         if user_hint.strip():
             base += f" {user_hint.strip()}"
         return base[:900]
+
+    def _image_quality(self) -> str:
+        quality = settings.openai_image_quality.strip().lower()
+        if settings.openai_image_model.startswith("gpt-image"):
+            legacy = {"standard": "medium", "hd": "high"}
+            return legacy.get(quality, quality)
+        return quality
+
+    def _save_image_bytes(self, content: bytes) -> str:
+        IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+        filename = f"{uuid.uuid4().hex}.png"
+        (IMAGES_DIR / filename).write_bytes(content)
+        return filename
 
     async def generate(
         self,
@@ -181,17 +196,20 @@ Output ONLY the new prompt."""
                 model=settings.openai_image_model,
                 prompt=final_prompt,
                 size=settings.openai_image_size,
-                quality=settings.openai_image_quality,
+                quality=self._image_quality(),
                 n=1,
             )
         except Exception as e:
             raise RuntimeError(f"Image generation failed: {e}") from e
 
-        image_url = response.data[0].url
-        if not image_url:
-            raise RuntimeError("OpenAI returned no image URL")
+        item = response.data[0]
+        if item.b64_json:
+            filename = self._save_image_bytes(base64.b64decode(item.b64_json))
+        elif item.url:
+            filename = await self._download_and_save(item.url)
+        else:
+            raise RuntimeError("OpenAI returned no image data")
 
-        filename = await self._download_and_save(image_url)
         return {
             "image_url": f"/api/images/{filename}",
             "prompt_used": final_prompt,
@@ -199,16 +217,10 @@ Output ONLY the new prompt."""
         }
 
     async def _download_and_save(self, url: str) -> str:
-        IMAGES_DIR.mkdir(parents=True, exist_ok=True)
-        filename = f"{uuid.uuid4().hex}.png"
-        path = IMAGES_DIR / filename
-
         async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
             resp = await client.get(url)
             resp.raise_for_status()
-            path.write_bytes(resp.content)
-
-        return filename
+            return self._save_image_bytes(resp.content)
 
 
 image_service = ImageService()

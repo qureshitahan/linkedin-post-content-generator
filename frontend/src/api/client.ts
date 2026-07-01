@@ -1,4 +1,4 @@
-import type { HealthStatus, Objective, RunSettings, Topic } from '../types';
+import type { HealthStatus, Objective, Principle, RunSettings, Topic } from '../types';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? '/api';
 export const MAX_OBJECTIVE_LENGTH = 15000;
@@ -46,10 +46,10 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 export const api = {
   health: () => request<HealthStatus>('/health'),
 
-  createObjective: (text: string) =>
+  createObjective: (text: string, principleId?: number | null) =>
     request<Objective>('/objectives', {
       method: 'POST',
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({ text, principle_id: principleId ?? null }),
     }),
 
   analyzeObjective: (id: number, runSettings?: RunSettings) =>
@@ -64,6 +64,39 @@ export const api = {
 
   clearObjectives: () =>
     request<{ deleted: number }>('/objectives', { method: 'DELETE' }),
+
+  deleteObjective: (id: number) =>
+    request<{ deleted: number }>(`/objectives/${id}`, { method: 'DELETE' }),
+
+  listPrinciples: () => request<Principle[]>('/principles'),
+
+  createPrinciple: (name: string, description?: string) =>
+    request<Principle>('/principles', {
+      method: 'POST',
+      body: JSON.stringify({ name, description: description ?? null }),
+    }),
+
+  deletePrinciple: (id: number) =>
+    request<{ deleted: number }>(`/principles/${id}`, { method: 'DELETE' }),
+
+  uploadPrincipleDocument: async (principleId: number, file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await fetch(`${API_BASE}/principles/${principleId}/documents`, {
+      method: 'POST',
+      body: formData,
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: response.statusText }));
+      throw new Error(formatApiErrorDetail(error.detail, response.status));
+    }
+    return response.json();
+  },
+
+  deletePrincipleDocument: (principleId: number, documentId: number) =>
+    request<{ deleted: number }>(`/principles/${principleId}/documents/${documentId}`, {
+      method: 'DELETE',
+    }),
 
   regenerateDraft: (objectiveId: number, topicId: number, draftIndex = 0) =>
     request<Topic>(

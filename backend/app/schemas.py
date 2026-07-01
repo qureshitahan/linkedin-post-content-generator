@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 class ObjectiveCreate(BaseModel):
     text: str = Field(..., min_length=10, max_length=settings.max_objective_length)
+    principle_id: Optional[int] = None
 
 
 class SearchQueryOut(BaseModel):
@@ -123,6 +124,7 @@ class ObjectiveOut(BaseModel):
     id: int
     text: str
     status: str
+    principle_id: Optional[int] = None
     sources_used: Optional[str] = None
     run_settings: Optional[RunSettingsIn] = None
     created_at: datetime
@@ -189,3 +191,33 @@ class GenerateImageResponse(BaseModel):
     image_url: str
     prompt_used: str
     filename: str
+
+
+class PrincipleDocumentOut(BaseModel):
+    id: int
+    filename: str
+    created_at: datetime
+    char_count: int = 0
+
+    model_config = {"from_attributes": True}
+
+
+class PrincipleCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    description: Optional[str] = Field(default=None, max_length=2000)
+
+
+class PrincipleUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=255)
+    description: Optional[str] = Field(default=None, max_length=2000)
+
+
+class PrincipleOut(BaseModel):
+    id: int
+    name: str
+    description: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+    documents: List[PrincipleDocumentOut] = []
+
+    model_config = {"from_attributes": True}

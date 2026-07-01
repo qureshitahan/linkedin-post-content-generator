@@ -8,10 +8,8 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.models import EvidencePost, Objective, SearchQuery, Topic
-from app.services.objective_parser import (
-    objective_parser_service,
-    score_post_relevance,
-)
+from app.services.objective_parser import score_post_relevance
+from app.services.principle_context import build_parsed_objective
 from app.services.query_expansion import query_expansion_service
 from app.services.sources import source_aggregator
 from app.services.topic_clustering import topic_clustering_service
@@ -74,8 +72,8 @@ class AnalysisPipeline:
             except Exception as e:
                 logger.warning(f"Trends by location skipped: {e}")
 
-        # Step 1: Parse resume + goal into structured writer context
-        parsed = await objective_parser_service.parse(objective.text)
+        # Step 1: Parse goal + principle documents into structured writer context
+        parsed = await build_parsed_objective(db, objective)
 
         # Step 2: Expand objective into search queries
         queries = await query_expansion_service.expand_objective(parsed, trend_hints)

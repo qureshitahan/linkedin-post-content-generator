@@ -2,7 +2,7 @@ import json
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import List
+from typing import List, Optional
 
 from app.config import settings
 from app.services.claude import claude_service
@@ -60,12 +60,25 @@ class ParsedObjective:
     proof_points: List[str] = field(default_factory=list)
     subreddits: List[str] = field(default_factory=list)
     raw_text: str = ""
+    principle_name: str = ""
+    principle_snippets: List[str] = field(default_factory=list)
 
     def prompt_block(self) -> str:
         focus = ", ".join(self.focus_domains) if self.focus_domains else "derived from the user's goal"
         relevance = ", ".join(self.relevance_keywords[:12]) if self.relevance_keywords else focus
         avoid = ", ".join(self.avoid_topics) if self.avoid_topics else "(none — stay aligned to the goal only)"
         proofs = "\n".join(f"- {p}" for p in self.proof_points[:5]) if self.proof_points else "- (none provided)"
+
+        principle_block = ""
+        if self.principle_name or self.principle_snippets:
+            snippets = "\n".join(f"- {s}" for s in self.principle_snippets[:8]) or "- (no indexed documents yet)"
+            principle_block = f"""
+PRINCIPLE PROFILE ({self.principle_name or "selected author"}):
+Indexed background from uploaded documents. When the topic connects naturally, weave in 0-2 relevant experiences, projects, or achievements from below. Do NOT force a personal link if it feels stretched. Readers engage more when posts connect trending topics to real credibility.
+
+{snippets}
+"""
+
         return f"""AUTHOR (who is writing the post):
 {self.author_summary}
 
@@ -82,7 +95,7 @@ TOPICS TO AVOID IN DRAFTS (tangential to the goal — do not center posts on the
 {avoid}
 
 REAL EXPERIENCE TO GROUND THE DRAFT (use 0-2, do not invent):
-{proofs}"""
+{proofs}{principle_block}"""
 
 
 class ObjectiveParserService:
@@ -166,32 +179,54 @@ class ObjectiveParserService:
             raw_text=objective,
         )
 
-    async def parse(self, objective: str) -> ParsedObjective:
+    async def parse(
+        self,
+        objective: str,
+        *,
+        principle_background: str = "",
+        principle_name: str = "",
+    ) -> ParsedObjective:
         if not self.is_configured:
-            return self._heuristic_parse(objective)
+            parsed = self._heuristic_parse(objective)
+            if principle_background:
+                parsed.author_summary = (
+                    f"{parsed.author_summary} Background from principle documents: "
+                    f"{principle_background[:600]}"
+                )
+            parsed.principle_name = principle_name
+            return parsed
 
         background, goal = self._split_goal_from_context(objective)
+        principle_section = ""
+        if principle_background.strip():
+            principle_section = f"""
+INDEXED PRINCIPLE DOCUMENTS (author background — use for author_summary and proof_points):
+{principle_background[:12000]}
+"""
         prompt = f"""Parse this input for a LinkedIn content tool. Works for ANY industry (healthcare, finance, dev tools, marketing, etc.).
 
-BACKGROUND (optional — resume, skills, context):
-{background[:8000] if background else "(none — user only stated a goal)"}
+PRINCIPLE / AUTHOR: {principle_name or "(not specified)"}
 
+BACKGROUND (optional — resume, skills, context from the objective text):
+{background[:8000] if background else "(none in objective — use principle documents if provided)"}
+{principle_section}
 WRITING GOAL:
 {goal[:2000]}
 
 Return JSON only:
 {{
-  "author_summary": "2-3 sentences: who they are and what they do. If no background, infer only from the goal.",
+  "author_summary": "2-3 sentences: who they are and what they do. Prefer principle documents when provided.",
   "content_goal": "One clear sentence restating what LinkedIn posts they want",
   "focus_domains": ["3-6 broad areas from the GOAL — not random resume jobs unless the goal asks for them"],
   "relevance_keywords": ["8-15 words/phrases from the GOAL that signal a post is actually on-topic"],
   "avoid_topics": ["0-5 topics to avoid in drafts — only if background mentions areas unrelated to the goal, or the user explicitly excludes something. Empty array if nothing to avoid."],
-  "proof_points": ["0-5 concrete achievements from background that fit the GOAL — skip unrelated old roles"],
+  "proof_points": ["0-5 concrete achievements from principle documents or background that fit the GOAL — skip unrelated old roles"],
   "subreddits": ["3-8 ACTIVE, REAL subreddit names (no 'r/' prefix) where professionals discuss this goal. e.g. marketing analytics -> marketing, analytics, adops, PPC, dataengineering, datascience. Pick communities likely to contain on-topic discussion."]
 }}
 
 Rules:
 - Derive everything from what the user WANTS to write about, not from every line of their resume
+- When principle documents are provided, extract real achievements, companies, and skills from them
 - If background includes unrelated past work (e.g. crypto job but goal is marketing analytics), put the unrelated area in avoid_topics
 - If the user is a crypto founder wanting crypto posts, do NOT put crypto in avoid_topics
 - relevance_keywords should help filter noise that only matches a search query literally but not the user's intent
@@ -225,13 +260,16 @@ Rules:
                     if s
                 ][:8],
                 raw_text=objective,
+                principle_name=principle_name,
             )
             if not parsed.relevance_keywords:
                 parsed.relevance_keywords = self._extract_keywords(parsed.content_goal, limit=12)
             return parsed
         except Exception as e:
             logger.error(f"Objective parsing failed: {e}")
-            return self._heuristic_parse(objective)
+            parsed = self._heuristic_parse(objective)
+            parsed.principle_name = principle_name
+            return parsed
 
 
 def _keyword_in_text(keyword: str, text: str) -> bool:

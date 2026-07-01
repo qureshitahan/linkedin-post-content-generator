@@ -19,7 +19,8 @@ from app.schemas import (
     TrendItemOut,
 )
 from app.services.image_service import image_service
-from app.services.objective_parser import objective_parser_service, score_post_relevance
+from app.services.objective_parser import score_post_relevance
+from app.services.principle_context import build_parsed_objective
 from app.run_settings import RunSettings
 from app.services.pipeline import analysis_pipeline
 from app.services.trend_analysis import trend_analysis_service
@@ -56,7 +57,11 @@ def _evidence_to_posts(topic: Topic, parsed) -> list[dict]:
 
 @router.post("", response_model=ObjectiveOut, status_code=201)
 def create_objective(payload: ObjectiveCreate, db: Session = Depends(get_db)):
-    objective = Objective(text=payload.text.strip(), status="pending")
+    objective = Objective(
+        text=payload.text.strip(),
+        status="pending",
+        principle_id=payload.principle_id,
+    )
     db.add(objective)
     db.commit()
     db.refresh(objective)
@@ -86,6 +91,17 @@ def clear_objectives(db: Session = Depends(get_db)):
         db.delete(objective)
     db.commit()
     return {"deleted": count}
+
+
+@router.delete("/{objective_id}")
+def delete_objective(objective_id: int, db: Session = Depends(get_db)):
+    """Permanently delete one objective and related analysis data."""
+    objective = db.query(Objective).filter(Objective.id == objective_id).first()
+    if not objective:
+        raise HTTPException(status_code=404, detail="Objective not found")
+    db.delete(objective)
+    db.commit()
+    return {"deleted": objective_id}
 
 
 @router.get("/{objective_id}", response_model=ObjectiveOut)
@@ -163,7 +179,13 @@ async def regenerate_draft(
         raise HTTPException(status_code=404, detail="Objective not found")
 
     try:
-        parsed = await objective_parser_service.parse(objective.text)
+        topic_query = " ".join(
+            filter(
+                None,
+                [topic.name, topic.why_trending or "", topic.specific_event or "", objective.text],
+            )
+        )
+        parsed = await build_parsed_objective(db, objective, topic_query=topic_query)
         posts = _evidence_to_posts(topic, parsed)
         new_draft = await trend_analysis_service.regenerate_draft(
             topic_name=topic.name,
@@ -224,7 +246,13 @@ async def generate_drafts(
         raise HTTPException(status_code=404, detail="Objective not found")
 
     try:
-        parsed = await objective_parser_service.parse(objective.text)
+        topic_query = " ".join(
+            filter(
+                None,
+                [topic.name, topic.why_trending or "", topic.specific_event or "", objective.text],
+            )
+        )
+        parsed = await build_parsed_objective(db, objective, topic_query=topic_query)
         posts = _evidence_to_posts(topic, parsed)
         result = await trend_analysis_service.generate_drafts(
             topic_name=topic.name,
@@ -264,7 +292,7 @@ async def generate_topic_image(
     if not image_service.is_configured:
         raise HTTPException(
             status_code=503,
-            detail="Image generation not configured. Add OPENAI_API_KEY to .env (DALL-E 3).",
+            detail="Image generation not configured. Add OPENAI_API_KEY to .env (GPT Image).",
         )
 
     try:

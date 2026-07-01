@@ -13,6 +13,9 @@ class Objective(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     text: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(50), default="pending")
+    principle_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("principles.id"), nullable=True
+    )
     sources_used: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     run_settings: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
@@ -26,6 +29,37 @@ class Objective(Base):
     topics: Mapped[List["Topic"]] = relationship(
         back_populates="objective", cascade="all, delete-orphan"
     )
+    principle: Mapped[Optional["Principle"]] = relationship(back_populates="objectives")
+
+
+class Principle(Base):
+    __tablename__ = "principles"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    documents: Mapped[List["PrincipleDocument"]] = relationship(
+        back_populates="principle", cascade="all, delete-orphan"
+    )
+    objectives: Mapped[List["Objective"]] = relationship(back_populates="principle")
+
+
+class PrincipleDocument(Base):
+    __tablename__ = "principle_documents"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    principle_id: Mapped[int] = mapped_column(ForeignKey("principles.id"), nullable=False)
+    filename: Mapped[str] = mapped_column(String(500), nullable=False)
+    content_text: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    stored_path: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    principle: Mapped["Principle"] = relationship(back_populates="documents")
 
 
 class SearchQuery(Base):

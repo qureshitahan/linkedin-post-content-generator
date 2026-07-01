@@ -58,10 +58,27 @@ export interface SearchQuery {
   count_checked_at: string | null;
 }
 
+export interface PrincipleDocument {
+  id: number;
+  filename: string;
+  created_at: string;
+  char_count: number;
+}
+
+export interface Principle {
+  id: number;
+  name: string;
+  description: string | null;
+  created_at: string;
+  updated_at: string;
+  documents: PrincipleDocument[];
+}
+
 export interface Objective {
   id: number;
   text: string;
   status: string;
+  principle_id: number | null;
   sources_used: string | null;
   run_settings: RunSettings | null;
   created_at: string;

@@ -114,11 +114,11 @@ class Settings(BaseSettings):
     # Max search queries to generate
     max_search_queries: int = 10
 
-    # --- Image generation (OpenAI DALL-E — on demand only, user-triggered) ---
+    # --- Image generation (OpenAI GPT Image — on demand only, user-triggered) ---
     openai_api_key: str = ""
-    openai_image_model: str = "dall-e-3"
-    openai_image_size: str = "1792x1024"  # landscape, close to LinkedIn 1200x627
-    openai_image_quality: str = "standard"  # "hd" costs more
+    openai_image_model: str = "gpt-image-1"
+    openai_image_size: str = "1536x1024"  # landscape, close to LinkedIn 1200x627
+    openai_image_quality: str = "medium"  # low | medium | high | auto
     linkedin_drafts_count: int = 5
 
     @property

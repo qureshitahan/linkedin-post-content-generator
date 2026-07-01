@@ -1,5 +1,6 @@
 import type { RunSettings } from '../types';
 import InfoTip from './InfoTip';
+import { ToggleRow } from './ToggleSwitch';
 
 export const SOURCE_OPTIONS: { id: string; label: string; paid?: boolean; help: string }[] = [
   {
@@ -76,8 +77,9 @@ interface Props {
   onChange: (settings: RunSettings) => void;
 }
 
-function toggleList(list: string[], id: string): string[] {
-  return list.includes(id) ? list.filter((x) => x !== id) : [...list, id];
+function toggleList(list: string[], id: string, on: boolean): string[] {
+  if (on) return list.includes(id) ? list : [...list, id];
+  return list.filter((x) => x !== id);
 }
 
 function SettingLabel({ label, tip }: { label: string; tip: string }) {
@@ -91,6 +93,7 @@ function SettingLabel({ label, tip }: { label: string; tip: string }) {
 
 export default function DiscoverRunSettings({ settings, onChange }: Props) {
   const xEnabled = settings.enabled_sources.some((s) => s === 'x' || s === 'x_research');
+  const enabledSourceCount = settings.enabled_sources.length;
 
   return (
     <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-4">
@@ -99,45 +102,39 @@ export default function DiscoverRunSettings({ settings, onChange }: Props) {
         <InfoTip text="These controls apply only when you click Analyze — they decide where to look and how much to fetch. LinkedIn drafts and images are created later, only when you ask for them." />
       </h3>
       <p className="mt-1 text-xs text-slate-500">
-        Control cost before you run. Drafts and images are generated later, only when you ask.
+        These settings only affect topic discovery. LinkedIn drafts and images are chosen and
+        generated later on each topic card.
       </p>
 
       <div className="mt-4 space-y-5">
         <section>
-          <p className="mb-2 inline-flex items-center text-xs font-medium uppercase tracking-wide text-slate-500">
-            Sources
-            <InfoTip text="Pick which platforms to search. Only checked sources run. Items marked ($) use the paid X API and add cost per run." />
-          </p>
-          <div className="flex flex-wrap gap-2">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <p className="inline-flex items-center text-xs font-medium uppercase tracking-wide text-slate-500">
+              Sources
+              <InfoTip text="Toggle which platforms to search. Only sources turned On will run. Paid ($) sources use the X API." />
+            </p>
+            <span className="text-xs text-slate-400">
+              {enabledSourceCount} of {SOURCE_OPTIONS.length} on
+            </span>
+          </div>
+          <div className="space-y-2">
             {SOURCE_OPTIONS.map((src) => {
               const selected = settings.enabled_sources.includes(src.id);
               return (
-              <label
-                key={src.id}
-                className={`inline-flex cursor-pointer items-center gap-1 rounded-full px-3 py-1 text-xs font-medium ${
-                  selected
-                    ? 'bg-brand-600 text-white'
-                    : 'bg-white text-slate-600 ring-1 ring-slate-200'
-                }`}
-              >
-                <input
-                  type="checkbox"
-                  className="sr-only"
+                <ToggleRow
+                  key={src.id}
                   checked={selected}
-                  onChange={() =>
+                  onChange={(on) =>
                     onChange({
                       ...settings,
-                      enabled_sources: toggleList(settings.enabled_sources, src.id),
+                      enabled_sources: toggleList(settings.enabled_sources, src.id, on),
                     })
                   }
+                  label={src.label}
+                  suffix={src.paid ? 'Paid' : undefined}
+                  help={src.help}
                 />
-                <span>
-                  {src.label}
-                  {src.paid && ' ($)'}
-                </span>
-                <InfoTip text={src.help} onDark={selected} />
-              </label>
-            );
+              );
             })}
           </div>
         </section>
@@ -268,44 +265,6 @@ export default function DiscoverRunSettings({ settings, onChange }: Props) {
           </section>
         )}
 
-        <section>
-          <p className="mb-1 inline-flex items-center text-xs font-medium uppercase tracking-wide text-slate-500">
-            Draft styles (generated later, per topic you choose)
-            <InfoTip text="Not used during discovery. When you click “Write drafts” on a topic, Claude generates one post per selected style using that topic’s evidence." />
-          </p>
-          <p className="mb-2 text-xs text-slate-400">
-            Pick which post styles to offer when you click &quot;Write drafts&quot; on a topic.
-          </p>
-          <div className="flex flex-wrap gap-2">
-            {DRAFT_STYLE_OPTIONS.map((style) => {
-              const selected = settings.draft_styles.includes(style.id);
-              return (
-              <label
-                key={style.id}
-                className={`inline-flex cursor-pointer items-center gap-1 rounded-full px-3 py-1 text-xs font-medium ${
-                  selected
-                    ? 'bg-slate-800 text-white'
-                    : 'bg-white text-slate-600 ring-1 ring-slate-200'
-                }`}
-              >
-                <input
-                  type="checkbox"
-                  className="sr-only"
-                  checked={selected}
-                  onChange={() =>
-                    onChange({
-                      ...settings,
-                      draft_styles: toggleList(settings.draft_styles, style.id),
-                    })
-                  }
-                />
-                {style.label}
-                <InfoTip text={style.desc} onDark={selected} />
-              </label>
-            );
-            })}
-          </div>
-        </section>
       </div>
     </div>
   );

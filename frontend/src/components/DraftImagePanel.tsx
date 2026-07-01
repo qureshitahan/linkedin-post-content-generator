@@ -31,7 +31,7 @@ export default function DraftImagePanel({
 
   const generate = async (mode: 'new' | 'edit') => {
     if (!imageGenerationReady) {
-      setError('Add OPENAI_API_KEY to .env to enable image generation (DALL-E 3).');
+      setError('Add OPENAI_API_KEY to .env to enable image generation.');
       return;
     }
 
@@ -59,7 +59,7 @@ export default function DraftImagePanel({
     <div className="mt-4 border-t border-slate-100 pt-4">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h5 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-          Post image (on demand)
+          Image for this draft
         </h5>
         {!image && (
           <button
@@ -74,7 +74,8 @@ export default function DraftImagePanel({
 
       {!imageGenerationReady && (
         <p className="mb-3 text-xs text-amber-700">
-          Image generation needs an OpenAI API key (DALL-E 3). Claude writes the prompt; OpenAI renders the image.
+          Image generation needs an OpenAI API key. Claude reads this exact draft, writes the prompt,
+          and OpenAI renders the image.
         </p>
       )}
 
@@ -91,7 +92,8 @@ export default function DraftImagePanel({
             className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 placeholder:text-slate-400 focus:border-brand-400 focus:outline-none focus:ring-1 focus:ring-brand-400"
           />
           <p className="mt-1 text-xs text-slate-400">
-            Leave blank to auto-generate a LinkedIn-appropriate prompt from the post text.
+            Leave blank to auto-generate from this draft's hook, argument, proof point, and takeaway.
+            Add a note only if you want to steer the visual style.
           </p>
         </div>
       )}
@@ -103,7 +105,7 @@ export default function DraftImagePanel({
           disabled={generating || !imageGenerationReady}
           className="btn-primary text-sm disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {generating ? 'Generating image…' : 'Generate LinkedIn image'}
+          {generating ? 'Generating image…' : 'Generate image from this draft'}
         </button>
       ) : (
         <div className="space-y-4">

@@ -61,5 +61,56 @@ class ClaudeService:
 
         return response.content[0].text.strip()
 
+    def extract_text_from_image(
+        self,
+        content: bytes,
+        media_type: str,
+        filename: str = "",
+    ) -> str:
+        """OCR / describe an uploaded image for principle document indexing."""
+        import base64
+
+        if not self.is_configured or not self.client:
+            raise RuntimeError(
+                "Image parsing requires Anthropic API key (Claude vision) in .env."
+            )
+
+        b64 = base64.standard_b64encode(content).decode("ascii")
+        label = f" ({filename})" if filename else ""
+        prompt = (
+            f"Extract ALL readable text from this image{label} for a professional background index. "
+            "Include names, titles, companies, dates, skills, achievements, awards, education, "
+            "certifications, and any other factual details visible. "
+            "If there is no text, describe relevant professional content shown (charts, logos, "
+            "project screenshots) in plain sentences. Output plain text only — no markdown."
+        )
+
+        try:
+            response = self.client.messages.create(
+                model=settings.anthropic_model_fast,
+                max_tokens=2048,
+                temperature=0.1,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "image",
+                                "source": {
+                                    "type": "base64",
+                                    "media_type": media_type,
+                                    "data": b64,
+                                },
+                            },
+                            {"type": "text", "text": prompt},
+                        ],
+                    }
+                ],
+            )
+        except APIStatusError as e:
+            raise RuntimeError(f"Could not parse image: {e.message}") from e
+
+        return response.content[0].text.strip()
+
 
 claude_service = ClaudeService()
