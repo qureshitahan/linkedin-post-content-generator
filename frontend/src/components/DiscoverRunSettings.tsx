@@ -1,23 +1,62 @@
 import type { RunSettings } from '../types';
+import InfoTip from './InfoTip';
 
-export const SOURCE_OPTIONS: { id: string; label: string; paid?: boolean }[] = [
-  { id: 'news', label: 'Google News' },
-  { id: 'industry', label: 'Industry RSS' },
-  { id: 'hackernews', label: 'Hacker News' },
-  { id: 'arxiv', label: 'arXiv papers' },
-  { id: 'pubmed', label: 'PubMed' },
-  { id: 'preprint', label: 'bioRxiv / medRxiv' },
-  { id: 'devto', label: 'Dev.to' },
-  { id: 'x_research', label: 'X research buzz', paid: true },
-  { id: 'x', label: 'X / Twitter posts', paid: true },
+export const SOURCE_OPTIONS: { id: string; label: string; paid?: boolean; help: string }[] = [
+  {
+    id: 'news',
+    label: 'Google News',
+    help: 'Headlines from Google News RSS. Free — best general “what’s trending” signal for almost any topic.',
+  },
+  {
+    id: 'industry',
+    label: 'Industry RSS',
+    help: 'Trade publication feeds (healthcare, AI, marketing, data, etc.). Free — strong for professional niches.',
+  },
+  {
+    id: 'hackernews',
+    label: 'Hacker News',
+    help: 'Tech community discussions via Hacker News search. Free — great for engineering, data, and startup discourse.',
+  },
+  {
+    id: 'arxiv',
+    label: 'arXiv papers',
+    help: 'Recent AI/ML and quant-bio preprints on arXiv. Free — surfaces research before it hits mainstream news.',
+  },
+  {
+    id: 'pubmed',
+    label: 'PubMed',
+    help: 'Peer-reviewed clinical and life-sciences literature. Free — use when your goal is healthcare or science.',
+  },
+  {
+    id: 'preprint',
+    label: 'bioRxiv / medRxiv',
+    help: 'Early biology and medicine preprints. Free — catches emerging health research not yet in journals.',
+  },
+  {
+    id: 'devto',
+    label: 'Dev.to',
+    help: 'Practitioner articles (ML, data, healthcare, DevOps tags). Free — how people in the field actually talk about topics.',
+  },
+  {
+    id: 'x_research',
+    label: 'X research buzz',
+    paid: true,
+    help: 'Finds high-traction posts on X announcing new papers. Uses paid X API — enable only when you want social buzz around research.',
+  },
+  {
+    id: 'x',
+    label: 'X / Twitter posts',
+    paid: true,
+    help: 'Recent tweets matching your search queries. Uses paid X API — niche professional topics often have weak X signal; other sources are usually better.',
+  },
 ];
 
 export const DRAFT_STYLE_OPTIONS: { id: string; label: string; desc: string }[] = [
-  { id: 'provocative', label: 'Bold hook', desc: 'Sharp, scroll-stopping opener' },
-  { id: 'analytical', label: 'Evidence-led', desc: 'Lead with a finding or stat' },
-  { id: 'story', label: 'Personal POV', desc: 'Practitioner voice & experience' },
-  { id: 'curious', label: 'Question-led', desc: 'Open with a debate question' },
-  { id: 'actionable', label: 'Practical takeaway', desc: 'What to do differently' },
+  { id: 'provocative', label: 'Bold hook', desc: 'Sharp, scroll-stopping opener — contrarian or surprising.' },
+  { id: 'analytical', label: 'Evidence-led', desc: 'Lead with a finding, stat, or concrete fact from the evidence.' },
+  { id: 'story', label: 'Personal POV', desc: 'Practitioner voice — one real insight from experience.' },
+  { id: 'curious', label: 'Question-led', desc: 'Open with a specific question your audience is debating.' },
+  { id: 'actionable', label: 'Practical takeaway', desc: 'Focus on what to do differently — clear and useful.' },
 ];
 
 export const DEFAULT_RUN_SETTINGS: RunSettings = {
@@ -41,25 +80,42 @@ function toggleList(list: string[], id: string): string[] {
   return list.includes(id) ? list.filter((x) => x !== id) : [...list, id];
 }
 
+function SettingLabel({ label, tip }: { label: string; tip: string }) {
+  return (
+    <span className="inline-flex items-center text-slate-600">
+      {label}
+      <InfoTip text={tip} />
+    </span>
+  );
+}
+
 export default function DiscoverRunSettings({ settings, onChange }: Props) {
   const xEnabled = settings.enabled_sources.some((s) => s === 'x' || s === 'x_research');
 
   return (
     <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-4">
-      <h3 className="text-sm font-semibold text-slate-800">Discovery settings</h3>
+      <h3 className="inline-flex items-center text-sm font-semibold text-slate-800">
+        Discovery settings
+        <InfoTip text="These controls apply only when you click Analyze — they decide where to look and how much to fetch. LinkedIn drafts and images are created later, only when you ask for them." />
+      </h3>
       <p className="mt-1 text-xs text-slate-500">
         Control cost before you run. Drafts and images are generated later, only when you ask.
       </p>
 
       <div className="mt-4 space-y-5">
         <section>
-          <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">Sources</p>
+          <p className="mb-2 inline-flex items-center text-xs font-medium uppercase tracking-wide text-slate-500">
+            Sources
+            <InfoTip text="Pick which platforms to search. Only checked sources run. Items marked ($) use the paid X API and add cost per run." />
+          </p>
           <div className="flex flex-wrap gap-2">
-            {SOURCE_OPTIONS.map((src) => (
+            {SOURCE_OPTIONS.map((src) => {
+              const selected = settings.enabled_sources.includes(src.id);
+              return (
               <label
                 key={src.id}
-                className={`cursor-pointer rounded-full px-3 py-1 text-xs font-medium ${
-                  settings.enabled_sources.includes(src.id)
+                className={`inline-flex cursor-pointer items-center gap-1 rounded-full px-3 py-1 text-xs font-medium ${
+                  selected
                     ? 'bg-brand-600 text-white'
                     : 'bg-white text-slate-600 ring-1 ring-slate-200'
                 }`}
@@ -67,7 +123,7 @@ export default function DiscoverRunSettings({ settings, onChange }: Props) {
                 <input
                   type="checkbox"
                   className="sr-only"
-                  checked={settings.enabled_sources.includes(src.id)}
+                  checked={selected}
                   onChange={() =>
                     onChange({
                       ...settings,
@@ -75,16 +131,23 @@ export default function DiscoverRunSettings({ settings, onChange }: Props) {
                     })
                   }
                 />
-                {src.label}
-                {src.paid && ' ($)'}
+                <span>
+                  {src.label}
+                  {src.paid && ' ($)'}
+                </span>
+                <InfoTip text={src.help} onDark={selected} />
               </label>
-            ))}
+            );
+            })}
           </div>
         </section>
 
         <section className="grid gap-4 sm:grid-cols-2">
           <label className="block text-sm">
-            <span className="text-slate-600">Search queries to expand</span>
+            <SettingLabel
+              label="Search queries to expand"
+              tip="Claude turns your goal into this many search phrases (e.g. “marketing mix modeling 2025”). More queries = broader discovery but a longer, pricier run."
+            />
             <input
               type="number"
               min={3}
@@ -97,7 +160,10 @@ export default function DiscoverRunSettings({ settings, onChange }: Props) {
             />
           </label>
           <label className="block text-sm">
-            <span className="text-slate-600">Queries per source</span>
+            <SettingLabel
+              label="Queries per source"
+              tip="Each enabled source runs at most this many of those search phrases. Lower = fewer API calls and faster runs."
+            />
             <input
               type="number"
               min={1}
@@ -110,7 +176,10 @@ export default function DiscoverRunSettings({ settings, onChange }: Props) {
             />
           </label>
           <label className="block text-sm">
-            <span className="text-slate-600">Posts per query (free sources)</span>
+            <SettingLabel
+              label="Posts per query (free sources)"
+              tip="How many posts or articles to fetch per search phrase on free sources (News, HN, arXiv, PubMed, etc.). Higher = more evidence to cluster but slower."
+            />
             <input
               type="number"
               min={5}
@@ -123,7 +192,10 @@ export default function DiscoverRunSettings({ settings, onChange }: Props) {
             />
           </label>
           <label className="block text-sm">
-            <span className="text-slate-600">Max topics to surface</span>
+            <SettingLabel
+              label="Max topics to surface"
+              tip="After filtering for relevance to your goal, how many topic clusters to rank, analyze deeply, and show you. The rest are dropped."
+            />
             <input
               type="number"
               min={1}
@@ -139,10 +211,16 @@ export default function DiscoverRunSettings({ settings, onChange }: Props) {
 
         {xEnabled && (
           <section className="rounded border border-amber-200 bg-amber-50/80 p-3">
-            <p className="mb-2 text-xs font-semibold text-amber-900">X / Twitter (paid API)</p>
+            <p className="mb-2 inline-flex items-center text-xs font-semibold text-amber-900">
+              X / Twitter (paid API)
+              <InfoTip text="These settings only apply when X research buzz and/or X posts are enabled above. Each search uses your X API quota." />
+            </p>
             <div className="grid gap-3 sm:grid-cols-3">
               <label className="block text-sm">
-                <span className="text-slate-600">X posts per query</span>
+                <SettingLabel
+                  label="X posts per query"
+                  tip="Maximum tweets to pull per search phrase for X sources. Each fetch uses X API credits — keep low unless you need volume."
+                />
                 <input
                   type="number"
                   min={0}
@@ -155,7 +233,10 @@ export default function DiscoverRunSettings({ settings, onChange }: Props) {
                 />
               </label>
               <label className="block text-sm">
-                <span className="text-slate-600">Research buzz min likes</span>
+                <SettingLabel
+                  label="Research buzz min likes"
+                  tip="For X research buzz only: ignore paper-announcement posts below this like count. Filters dead tweets so you only see posts that actually got traction."
+                />
                 <input
                   type="number"
                   min={0}
@@ -168,7 +249,10 @@ export default function DiscoverRunSettings({ settings, onChange }: Props) {
                 />
               </label>
               <label className="block text-sm">
-                <span className="text-slate-600">Research buzz queries</span>
+                <SettingLabel
+                  label="Research buzz queries"
+                  tip="How many of your expanded search phrases to send to X research buzz (separate from general X post search). Fewer = cheaper."
+                />
                 <input
                   type="number"
                   min={0}
@@ -185,19 +269,21 @@ export default function DiscoverRunSettings({ settings, onChange }: Props) {
         )}
 
         <section>
-          <p className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+          <p className="mb-1 inline-flex items-center text-xs font-medium uppercase tracking-wide text-slate-500">
             Draft styles (generated later, per topic you choose)
+            <InfoTip text="Not used during discovery. When you click “Write drafts” on a topic, Claude generates one post per selected style using that topic’s evidence." />
           </p>
           <p className="mb-2 text-xs text-slate-400">
             Pick which post styles to offer when you click &quot;Write drafts&quot; on a topic.
           </p>
           <div className="flex flex-wrap gap-2">
-            {DRAFT_STYLE_OPTIONS.map((style) => (
+            {DRAFT_STYLE_OPTIONS.map((style) => {
+              const selected = settings.draft_styles.includes(style.id);
+              return (
               <label
                 key={style.id}
-                title={style.desc}
-                className={`cursor-pointer rounded-full px-3 py-1 text-xs font-medium ${
-                  settings.draft_styles.includes(style.id)
+                className={`inline-flex cursor-pointer items-center gap-1 rounded-full px-3 py-1 text-xs font-medium ${
+                  selected
                     ? 'bg-slate-800 text-white'
                     : 'bg-white text-slate-600 ring-1 ring-slate-200'
                 }`}
@@ -205,7 +291,7 @@ export default function DiscoverRunSettings({ settings, onChange }: Props) {
                 <input
                   type="checkbox"
                   className="sr-only"
-                  checked={settings.draft_styles.includes(style.id)}
+                  checked={selected}
                   onChange={() =>
                     onChange({
                       ...settings,
@@ -214,8 +300,10 @@ export default function DiscoverRunSettings({ settings, onChange }: Props) {
                   }
                 />
                 {style.label}
+                <InfoTip text={style.desc} onDark={selected} />
               </label>
-            ))}
+            );
+            })}
           </div>
         </section>
       </div>
