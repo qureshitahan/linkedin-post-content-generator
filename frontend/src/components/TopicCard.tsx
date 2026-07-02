@@ -54,6 +54,7 @@ export default function TopicCard({
   const [drafts, setDrafts] = useState<LinkedInDraft[]>(() => draftsFromTopic(topic));
   const [regeneratingIndex, setRegeneratingIndex] = useState<number | null>(null);
   const [generatingDrafts, setGeneratingDrafts] = useState(false);
+  const [autoImageVersions, setAutoImageVersions] = useState<Record<number, number>>({});
   const [regenError, setRegenError] = useState<string | null>(null);
   const [selectedStyles, setSelectedStyles] = useState<string[]>(() =>
     DRAFT_STYLE_OPTIONS.map((s) => s.id),
@@ -69,6 +70,15 @@ export default function TopicCard({
       const updated = await api.generateDrafts(objectiveId, topic.id, selectedStyles);
       const next = updated.linkedin_drafts?.length ? updated.linkedin_drafts : draftsFromTopic(updated);
       setDrafts(next);
+      if (imageGenerationReady) {
+        const version = Date.now();
+        setAutoImageVersions(
+          next.reduce<Record<number, number>>((acc, _draft, index) => {
+            acc[index] = version + index;
+            return acc;
+          }, {}),
+        );
+      }
     } catch (err) {
       setRegenError(err instanceof Error ? err.message : 'Could not generate drafts');
     } finally {
@@ -94,6 +104,9 @@ export default function TopicCard({
         ? updated.linkedin_drafts
         : draftsFromTopic(updated);
       setDrafts(nextDrafts);
+      if (imageGenerationReady) {
+        setAutoImageVersions((prev) => ({ ...prev, [index]: Date.now() }));
+      }
     } catch (err) {
       setRegenError(err instanceof Error ? err.message : 'Could not regenerate draft');
     } finally {
@@ -163,8 +176,8 @@ export default function TopicCard({
             <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4">
               <h4 className="text-sm font-semibold text-slate-800">Write LinkedIn drafts</h4>
               <p className="mb-3 mt-1 text-sm text-slate-600">
-                Discovery only finds trending topics. Choose draft styles here, then generate posts
-                for this topic when you are ready (saves Claude API cost).
+                Choose draft styles, then generate posts for this topic. Images will start
+                automatically for each generated post.
               </p>
               <div className="mb-2 flex items-center justify-between gap-2">
                 <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
@@ -201,7 +214,7 @@ export default function TopicCard({
               >
                 {generatingDrafts
                   ? 'Writing drafts…'
-                  : `Write ${selectedStyles.length} LinkedIn draft${selectedStyles.length === 1 ? '' : 's'}`}
+                  : `Generate ${selectedStyles.length} LinkedIn post${selectedStyles.length === 1 ? '' : 's'} + images`}
               </button>
               {regenError && <p className="mt-2 text-xs text-red-600">{regenError}</p>}
             </div>
@@ -285,6 +298,7 @@ export default function TopicCard({
                           objectiveId={objectiveId}
                           topicId={topic.id}
                           imageGenerationReady={imageGenerationReady}
+                          autoGenerateVersion={autoImageVersions[index] ?? 0}
                         />
                       </div>
                     </article>
