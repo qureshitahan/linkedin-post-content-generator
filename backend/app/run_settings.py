@@ -42,7 +42,10 @@ class RunSettings:
     max_search_queries: int = 6
     # X / Twitter (paid API)
     x_posts_per_query: int = 10
+    x_min_likes: int = 0
+    x_min_impressions: int = 0
     x_research_min_likes: int = 30
+    x_research_min_impressions: int = 0
     x_research_max_queries: int = 2
     # Draft styles — used when user clicks "Generate drafts" on a topic (not during discovery)
     draft_styles: List[str] = field(
@@ -58,7 +61,10 @@ class RunSettings:
             max_topics_to_analyze=settings.max_topics_to_analyze,
             max_search_queries=settings.max_search_queries,
             x_posts_per_query=min(15, settings.posts_per_query),
+            x_min_likes=0,
+            x_min_impressions=0,
             x_research_min_likes=settings.x_research_min_likes,
+            x_research_min_impressions=0,
             x_research_max_queries=settings.x_research_max_queries,
         )
 
@@ -80,7 +86,10 @@ class RunSettings:
             "max_topics_to_analyze": self.max_topics_to_analyze,
             "max_search_queries": self.max_search_queries,
             "x_posts_per_query": self.x_posts_per_query,
+            "x_min_likes": self.x_min_likes,
+            "x_min_impressions": self.x_min_impressions,
             "x_research_min_likes": self.x_research_min_likes,
+            "x_research_min_impressions": self.x_research_min_impressions,
             "x_research_max_queries": self.x_research_max_queries,
             "draft_styles": self.draft_styles,
         }

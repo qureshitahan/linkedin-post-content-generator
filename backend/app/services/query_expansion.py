@@ -19,6 +19,28 @@ class QueryExpansionService:
     def is_configured(self) -> bool:
         return claude_service.is_configured
 
+    def _topic_terms(self, text: str) -> List[str]:
+        """Extract searchable topic terms, skipping meta/request words."""
+        skip = STOPWORDS | {
+            "according",
+            "profile",
+            "tell",
+            "something",
+            "create",
+            "post",
+            "educates",
+            "their",
+            "linkedin",
+            "posts",
+            "want",
+            "help",
+            "please",
+            "based",
+            "using",
+        }
+        words = re.findall(r"\b[a-z0-9]{3,}\b", text.lower())
+        return [w for w in words if w not in skip]
+
     def _seed_queries_from_goal(self, parsed: ParsedObjective) -> List[str]:
         """Always include the user's literal goal phrasing — not just principle-derived terms."""
         seeds: List[str] = []
@@ -27,18 +49,20 @@ class QueryExpansionService:
 
         for text in (goal, raw):
             cleaned = re.sub(r"\s+", " ", text).strip()
-            if cleaned and len(cleaned) <= 90 and cleaned not in seeds:
+            if cleaned and len(cleaned) <= 120 and cleaned not in seeds:
                 seeds.append(cleaned)
 
         for domain in (parsed.focus_domains or [])[:3]:
             if domain and domain not in seeds:
                 seeds.append(domain)
 
-        goal_words = [
-            w for w in re.findall(r"\b[a-z]{3,}\b", goal.lower()) if w not in STOPWORDS
-        ]
-        if len(goal_words) >= 2:
-            phrase = " ".join(goal_words[:4])
+        terms = self._topic_terms(goal or raw)
+        if "agentic" in terms and "systems" in terms and "agentic systems" not in seeds:
+            seeds.append("agentic AI systems")
+        if "machine" in terms and "learning" in terms and "machine learning" not in seeds:
+            seeds.append("machine learning AI")
+        if len(terms) >= 2:
+            phrase = " ".join(terms[:4])
             if phrase not in seeds:
                 seeds.append(phrase)
 
@@ -55,23 +79,31 @@ class QueryExpansionService:
 
     def _fallback_queries(self, objective: str) -> List[str]:
         """Generate basic queries when Claude is unavailable."""
-        base = objective.lower()
-        words = re.findall(r"\b[a-z]{3,}\b", base)
-        key_terms = [
-            w
-            for w in words
-            if w not in {"about", "want", "write", "posts", "linkedin", "the", "and", "for"}
-        ][:5]
+        terms = self._topic_terms(objective)
+        queries: List[str] = []
 
-        queries = []
-        if key_terms:
-            queries.append(" ".join(key_terms[:3]))
-            for term in key_terms:
+        if "agentic" in terms:
+            queries.extend(["agentic AI systems", "agentic AI architecture", "AI agents"])
+        if "machine" in terms and "learning" in terms:
+            queries.append("machine learning trends")
+        if "ai" in terms:
+            queries.append("AI agents enterprise")
+
+        if len(terms) >= 2:
+            queries.append(" ".join(terms[:3]))
+            queries.append(" ".join(terms[:4]))
+
+        for term in terms[:4]:
+            if len(term) >= 5:
                 queries.append(term)
-                queries.append(f"{term} trending")
-                queries.append(f"{term} debate")
 
-        return queries[: active_run_settings().max_search_queries]
+        deduped: List[str] = []
+        for q in queries:
+            q = q.strip()
+            if q and q not in deduped and len(q) >= 4:
+                deduped.append(q)
+
+        return deduped[: active_run_settings().max_search_queries]
 
     async def expand_objective(
         self,

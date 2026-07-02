@@ -7,6 +7,7 @@ from app.config import settings
 from app.run_settings import DRAFT_STYLE_OPTIONS, active_run_settings
 from app.services.claude import claude_service
 from app.services.objective_parser import ParsedObjective, filter_relevant_posts
+from app.services.sources.research_utils import RESEARCH_PAPER, text_links_to_paper
 from app.services.url_utils import is_usable_reference_url
 
 logger = logging.getLogger(__name__)
@@ -133,13 +134,11 @@ class TrendAnalysisService:
         return "\n".join(lines)
 
     def _best_reference(self, posts: list[dict]) -> dict:
-        """Pick the most credible link to cite, in priority order:
-        1) high-traction X research buzz (breakthrough announcements),
-        2) research papers (arxiv, pubmed, preprint),
-        3) curated news/industry articles with direct publisher URLs,
-        4) embedded URLs in posts,
-        5) Reddit/HN permalinks,
-        6) highest-engagement post URL."""
+        """Pick the most credible link to cite.
+
+        Research papers beat social posts when both exist — drafts should cite
+        the primary source (arxiv, pubmed), not a viral tweet about something else.
+        """
 
         def _engagement(p: dict) -> float:
             return (p.get("likes", 0) or 0) + (p.get("retweets", 0) or 0) * 3 + (
@@ -149,20 +148,30 @@ class TrendAnalysisService:
         def _url(p: dict) -> str:
             return (p.get("post_url") or "").strip()
 
-        buzz = [
-            p for p in posts
-            if p.get("content_type") == "research_buzz" and is_usable_reference_url(_url(p))
-        ]
-        if buzz:
-            top = max(buzz, key=lambda p: (_engagement(p), p.get("_relevance", 0.0)))
-            return {"url": _url(top), "source_post": top}
-
         papers = [
             p for p in posts
-            if p.get("content_type") == "research_paper" and is_usable_reference_url(_url(p))
+            if (
+                p.get("content_type") == RESEARCH_PAPER
+                or p.get("source") in ("arxiv", "pubmed", "preprint")
+            )
+            and is_usable_reference_url(_url(p))
         ]
         if papers:
             top = max(papers, key=lambda p: p.get("_relevance", 0.0))
+            return {"url": _url(top), "source_post": top}
+
+        buzz = [
+            p for p in posts
+            if p.get("content_type") == "research_buzz"
+            and text_links_to_paper(p.get("text", ""))
+            and is_usable_reference_url(_url(p))
+        ]
+        if buzz:
+            top = max(buzz, key=lambda p: (_engagement(p), p.get("_relevance", 0.0)))
+            for match in _URL_RE.findall(top.get("text", "")):
+                paper_url = match.rstrip(".,);]")
+                if text_links_to_paper(paper_url) and is_usable_reference_url(paper_url):
+                    return {"url": paper_url, "source_post": top}
             return {"url": _url(top), "source_post": top}
 
         article_posts = [
@@ -343,7 +352,7 @@ Return JSON with these exact keys:
 
         posts_text = self._format_posts_for_prompt(filtered_posts)
         ref_line = (
-            f'\nREFERENCE LINK to cite at end if relevant: {ref_url}'
+            f'\nPRIMARY REFERENCE (use this exact URL in Reference line when the post cites research): {ref_url}'
             if ref_url
             else "\n(No clean external link. Do NOT invent one.)"
         )
@@ -370,7 +379,7 @@ STRUCTURE per draft (no labels in output):
 5. PROOF (optional, 1-2 sentences from real background only)
 6. TAKEAWAY (1 sentence)
 7. ENGAGEMENT QUESTION (last line)
-8. Reference line if URL exists: "Reference: <url>"
+8. Reference line if URL exists: "Reference: <url>" — when evidence includes a research paper, cite the paper URL (arxiv/pubmed), NOT an unrelated viral X post.
 
 RULES: human practitioner voice, short paragraphs, no em dashes, no AI clichés ({", ".join(BANNED_DRAFT_PATTERNS[:5])}…), 130-200 words each.
 

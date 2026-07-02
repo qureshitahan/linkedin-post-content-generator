@@ -67,7 +67,10 @@ export const DEFAULT_RUN_SETTINGS: RunSettings = {
   max_topics_to_analyze: 3,
   max_search_queries: 6,
   x_posts_per_query: 10,
+  x_min_likes: 0,
+  x_min_impressions: 0,
   x_research_min_likes: 30,
+  x_research_min_impressions: 0,
   x_research_max_queries: 2,
   draft_styles: DRAFT_STYLE_OPTIONS.map((s) => s.id),
 };
@@ -212,7 +215,7 @@ export default function DiscoverRunSettings({ settings, onChange }: Props) {
               X / Twitter (paid API)
               <InfoTip text="These settings only apply when X research buzz and/or X posts are enabled above. Each search uses your X API quota." />
             </p>
-            <div className="grid gap-3 sm:grid-cols-3">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               <label className="block text-sm">
                 <SettingLabel
                   label="X posts per query"
@@ -231,16 +234,64 @@ export default function DiscoverRunSettings({ settings, onChange }: Props) {
               </label>
               <label className="block text-sm">
                 <SettingLabel
+                  label="X min likes"
+                  tip="For X / Twitter posts: keep tweets with at least this many likes. Set 0 to disable. Posts can also qualify via min impressions."
+                />
+                <input
+                  type="number"
+                  min={0}
+                  max={5000}
+                  value={settings.x_min_likes ?? 0}
+                  onChange={(e) =>
+                    onChange({ ...settings, x_min_likes: Number(e.target.value) })
+                  }
+                  className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                />
+              </label>
+              <label className="block text-sm">
+                <SettingLabel
+                  label="X min impressions"
+                  tip="For X / Twitter posts: keep tweets with at least this many impressions. Set 0 to disable. A post passes if it meets either min likes OR min impressions."
+                />
+                <input
+                  type="number"
+                  min={0}
+                  max={1000000}
+                  value={settings.x_min_impressions ?? 0}
+                  onChange={(e) =>
+                    onChange({ ...settings, x_min_impressions: Number(e.target.value) })
+                  }
+                  className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                />
+              </label>
+              <label className="block text-sm">
+                <SettingLabel
                   label="Research buzz min likes"
                   tip="For X research buzz only: ignore paper-announcement posts below this like count. Filters dead tweets so you only see posts that actually got traction."
                 />
                 <input
                   type="number"
                   min={0}
-                  max={500}
+                  max={5000}
                   value={settings.x_research_min_likes}
                   onChange={(e) =>
                     onChange({ ...settings, x_research_min_likes: Number(e.target.value) })
+                  }
+                  className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                />
+              </label>
+              <label className="block text-sm">
+                <SettingLabel
+                  label="Research buzz min impressions"
+                  tip="For X research buzz: keep posts with at least this many impressions. Set 0 to use likes only. A post passes if it meets either research buzz min likes OR this threshold."
+                />
+                <input
+                  type="number"
+                  min={0}
+                  max={1000000}
+                  value={settings.x_research_min_impressions ?? 0}
+                  onChange={(e) =>
+                    onChange({ ...settings, x_research_min_impressions: Number(e.target.value) })
                   }
                   className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
                 />

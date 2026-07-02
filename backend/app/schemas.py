@@ -99,7 +99,10 @@ class RunSettingsIn(BaseModel):
     max_topics_to_analyze: int = Field(default=3, ge=1, le=8)
     max_search_queries: int = Field(default=6, ge=3, le=12)
     x_posts_per_query: int = Field(default=10, ge=0, le=30)
-    x_research_min_likes: int = Field(default=30, ge=0, le=500)
+    x_min_likes: int = Field(default=0, ge=0, le=5000)
+    x_min_impressions: int = Field(default=0, ge=0, le=1_000_000)
+    x_research_min_likes: int = Field(default=30, ge=0, le=5000)
+    x_research_min_impressions: int = Field(default=0, ge=0, le=1_000_000)
     x_research_max_queries: int = Field(default=2, ge=0, le=8)
     draft_styles: List[str] = Field(
         default_factory=lambda: [s[0] for s in DRAFT_STYLE_OPTIONS]

@@ -20,7 +20,10 @@ export interface RunSettings {
   max_topics_to_analyze: number;
   max_search_queries: number;
   x_posts_per_query: number;
+  x_min_likes: number;
+  x_min_impressions: number;
   x_research_min_likes: number;
+  x_research_min_impressions: number;
   x_research_max_queries: number;
   draft_styles: string[];
 }

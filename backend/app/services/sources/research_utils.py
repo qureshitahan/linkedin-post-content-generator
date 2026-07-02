@@ -8,6 +8,25 @@ RESEARCH_BUZZ = "research_buzz"
 
 RESEARCH_ENGAGEMENT_PROXY = 35
 
+PAPER_URL_HOSTS = (
+    "arxiv.org",
+    "biorxiv.org",
+    "medrxiv.org",
+    "doi.org",
+    "pubmed.ncbi.nlm.nih.gov",
+    "nature.com",
+    "science.org",
+    "cell.com",
+)
+
+
+def text_links_to_paper(text: str) -> bool:
+    """True when post text contains a scholarly paper URL."""
+    if not text:
+        return False
+    lower = text.lower()
+    return any(host in lower for host in PAPER_URL_HOSTS)
+
 
 def matches_query(text: str, query: str) -> bool:
     """True if any meaningful query term appears in text."""

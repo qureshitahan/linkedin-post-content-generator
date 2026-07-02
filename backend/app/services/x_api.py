@@ -157,12 +157,13 @@ class XAPIService:
         )
 
     async def search_research_buzz(
-        self, query: str, max_results: int = 20, min_likes: Optional[int] = None
+        self, query: str, max_results: int = 20, min_likes: Optional[int] = None,
+        min_impressions: Optional[int] = None,
     ) -> List[Dict]:
-        """Find high-traction X posts announcing or sharing research papers.
+        """Find high-traction X posts that link to research papers.
 
-        Targets tweets that link to arXiv/bioRxiv/medRxiv/DOIs or use common
-        research-announcement language, filtered by minimum likes (min_faves).
+        Requires a scholarly URL in the tweet (arxiv, bioRxiv, DOI, etc.) so
+        viral news accounts don't pollute research buzz.
         """
         min_likes = min_likes if min_likes is not None else settings.x_research_min_likes
         paper_links = (
@@ -170,16 +171,15 @@ class XAPIService:
             "url:doi.org OR url:nature.com OR url:science.org OR url:cell.com OR "
             "url:pubmed.ncbi.nlm.nih.gov"
         )
-        announcement = (
-            '"new paper" OR "our paper" OR "just published" OR "excited to share" OR '
-            'breakthrough OR "state of the art" OR SOTA OR "we show" OR preprint'
-        )
-        x_query = (
-            f"({query}) ({paper_links} OR {announcement}) "
-            f"-is:retweet -is:reply lang:en"
-        )
+        x_query = f"({query}) ({paper_links}) -is:retweet -is:reply lang:en"
         raw = await self._search_recent(query=x_query, max_results=max(max_results * 3, 30))
         filtered = [p for p in raw if (p.get("likes") or 0) >= min_likes]
+        if min_impressions and min_impressions > 0:
+            filtered = [
+                p for p in filtered
+                if (p.get("impressions") or 0) >= min_impressions
+                or (p.get("likes") or 0) >= min_likes
+            ]
         filtered.sort(
             key=lambda p: (p.get("likes") or 0) + (p.get("retweets") or 0) * 3,
             reverse=True,

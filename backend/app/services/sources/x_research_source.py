@@ -14,7 +14,8 @@ from typing import List
 from app.config import settings
 from app.run_settings import active_run_settings
 from app.services.sources.base import NormalizedPost
-from app.services.sources.research_utils import RESEARCH_BUZZ
+from app.services.sources.research_utils import RESEARCH_BUZZ, text_links_to_paper
+from app.services.sources.x_filters import filter_viral_posts
 from app.services.x_api import XAPIError, x_api_service
 
 logger = logging.getLogger(__name__)
@@ -36,10 +37,21 @@ class XResearchSource:
                 query,
                 max_results=max_results,
                 min_likes=rs.x_research_min_likes,
+                min_impressions=rs.x_research_min_impressions,
             )
         except XAPIError as e:
             logger.warning(f"X research buzz search failed for '{query}': {e}")
             return []
+
+        raw = [
+            p for p in raw
+            if text_links_to_paper(p.get("text", ""))
+        ]
+        raw = filter_viral_posts(
+            raw,
+            min_likes=rs.x_research_min_likes,
+            min_impressions=rs.x_research_min_impressions,
+        )
 
         posts: List[NormalizedPost] = []
         for p in raw:
