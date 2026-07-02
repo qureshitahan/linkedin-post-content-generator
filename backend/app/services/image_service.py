@@ -1,13 +1,12 @@
 """LinkedIn post image generation — Claude crafts prompts, OpenAI GPT Image renders.
 
-Varied LinkedIn-native visuals: slides, charts, photos, illustrations — rotated per generation.
+Designed LinkedIn graphics (charts, slides, illustrations) tied to each post — not AI stock photos.
 """
 
 import base64
 import json
 import logging
 import os
-import random
 import re
 import uuid
 from pathlib import Path
@@ -39,24 +38,25 @@ OPENAI_PLACEHOLDERS = frozenset(
 LINKEDIN_IMAGE_SYSTEM = """You write image generation prompts for LinkedIn post cover images.
 Output ONLY the prompt text — no preamble, no markdown.
 
-Think like someone who posts on LinkedIn every few days — each image looks DIFFERENT:
-sometimes a designed slide with text, sometimes a chart, sometimes a photo of a real place,
-sometimes people at work, sometimes a flat illustration — but always professional and on-topic.
+You are designing a LinkedIn post image — like a Canva slide, carousel cover, or clean chart.
+NOT a photorealistic stock photo. AI photos of people in hallways look fake and unprofessional.
 
-Pick the assigned visual format and execute it well. Do NOT default to the same layout every time.
+What works on LinkedIn B2B/healthcare posts:
+- A clean bar or line chart that visualizes the post's key claim
+- A stat slide with one big number and short label
+- A headline slide with the hook in bold typography
+- A flat illustration of the concept (multi-site ops, district layer, consolidation)
+- A simple before/after or with-vs-without comparison graphic (flat design, not icon org charts)
 
-Quality bar:
-- Polished, credible, scroll-worthy — like top LinkedIn creators and B2B brands
-- Clearly related to the post's industry and message
-- Clean composition, intentional color palette
-
-AVOID:
-- Generic org charts with icon nodes and connecting lines
-- Random unrelated metaphors (sand, fog, empty bridges, puzzle pieces, surreal art)
-- Uncanny close-up AI faces — if people appear, use from-behind, wide shot, or stock-photo distance
-- Cheesy clip art or obvious template spam
-
-Text on image: ONLY when the assigned format calls for it. Otherwise no text."""
+Rules:
+- The image must match the SPECIFIC visual concept provided — not a generic scene
+- Flat, designed, polished — credible LinkedIn creator aesthetic
+- NO photorealistic people, NO person from behind, NO walking down corridors, NO holding tablets
+- NO pharmacy/hospital stock photo scenes unless explicitly requested
+- NO org charts with icon nodes and connecting lines
+- NO random metaphors (sand, fog, bridges, surreal)
+- Text on image: only when the format requires it — spell exact short text in the prompt
+- Landscape 16:9, generous whitespace, professional palette (navy, white, teal, gray)"""
 
 ORG_CHART_PROMPT_TERMS = (
     "organizational chart",
@@ -79,107 +79,66 @@ METAPHOR_SLOP_TERMS = (
     "floating in void",
 )
 
-# Each format: uses_text, instruction template
+STOCK_PHOTO_CLICHES = (
+    "from behind",
+    "back view of a man",
+    "back view of a person",
+    "walking down the corridor",
+    "walking down the hallway",
+    "holding a tablet",
+    "holding tablet",
+    "stock photo",
+    "photorealistic man",
+    "photorealistic person",
+    "hospital corridor",
+    "pharmacy sign",
+    "candid workplace photo",
+    "professional candid",
+)
+
+# Designed LinkedIn formats only — no AI stock photos
 VISUAL_FORMATS: dict[str, dict] = {
-    "visual_only": {
-        "uses_text": False,
-        "instruction": (
-            "A strong topical image with NO text — professional photo or clean illustration that "
-            "supports the post hook. Real industry setting or symbolic object directly tied to the topic."
-        ),
-    },
-    "place_photo": {
-        "uses_text": False,
-        "instruction": (
-            "Professional stock-quality photo of a real workplace or industry setting from the post "
-            "(pharmacy interior, clinic, ops office, retail back room). Natural light, wide shot, no text."
-        ),
-    },
-    "people_at_work": {
-        "uses_text": False,
-        "instruction": (
-            "Professional candid workplace photo — team or manager in context (from behind or wide shot, "
-            "avoid front-facing close-ups). Clearly in the post's industry. No text overlay."
-        ),
-    },
-    "flat_illustration": {
-        "uses_text": False,
-        "instruction": (
-            "Clean flat vector illustration related to the post topic. Modern, minimal, professional "
-            "color palette. No photorealistic faces. No text unless format requires."
-        ),
-    },
     "minimal_chart": {
         "uses_text": False,
         "instruction": (
-            "Simple clean chart or graph (bar, line, or comparison) on a professional background — "
-            "visualizes the post's core point. Minimal labels, no paragraph text. Polished slide aesthetic."
-        ),
-    },
-    "comparison_graphic": {
-        "uses_text": False,
-        "instruction": (
-            "Side-by-side or before/after graphic showing the contrast in the post — flat design or "
-            "split photo layout, NOT an org chart with icon nodes. No long text blocks."
-        ),
-    },
-    "simple_infographic": {
-        "uses_text": False,
-        "instruction": (
-            "Single-insight infographic — one clear visual idea with icons or shapes, not a multi-tier org chart. "
-            "Professional LinkedIn infographic style."
-        ),
-    },
-    "text_slide": {
-        "uses_text": True,
-        "instruction": (
-            "LinkedIn carousel slide — one short headline (max 10 words) in bold sans-serif on a clean "
-            "solid or gradient background, plus a small relevant flat icon or accent shape."
+            "Simple professional bar or line chart on a clean slide background that visualizes "
+            "the post's core data point or comparison. Minimal axis labels, polished LinkedIn slide look."
         ),
     },
     "stat_slide": {
         "uses_text": True,
         "instruction": (
-            "Stat highlight slide — large number or percentage as hero typography, optional short subline, "
-            "clean professional background. Only use if the post has a real stat or bold quantified claim."
+            "Stat highlight slide — one large number or range as hero typography, "
+            "optional 3-5 word sublabel, clean solid or gradient background."
         ),
     },
-}
-
-STYLE_FORMAT_WEIGHTS: dict[str, dict[str, float]] = {
-    "provocative": {
-        "visual_only": 1.8,
-        "comparison_graphic": 1.5,
-        "text_slide": 1.2,
-        "place_photo": 1.3,
-        "stat_slide": 1.0,
+    "text_slide": {
+        "uses_text": True,
+        "instruction": (
+            "Headline slide — the post hook in bold sans-serif (max 10 words) on a clean background "
+            "with one small flat accent icon related to the topic."
+        ),
     },
-    "analytical": {
-        "minimal_chart": 2.0,
-        "stat_slide": 1.8,
-        "simple_infographic": 1.5,
-        "text_slide": 0.8,
-        "place_photo": 1.0,
+    "comparison_graphic": {
+        "uses_text": True,
+        "instruction": (
+            "With-vs-without or before/after comparison — two columns or split layout using flat design, "
+            "short labels, simple shapes. Shows the contrast argued in the post. NOT an icon org chart."
+        ),
     },
-    "story": {
-        "people_at_work": 2.0,
-        "place_photo": 1.8,
-        "visual_only": 1.5,
-        "flat_illustration": 1.2,
-        "text_slide": 0.6,
+    "flat_illustration": {
+        "uses_text": False,
+        "instruction": (
+            "Clean flat vector illustration of the post's concept (e.g. district layer connecting "
+            "sites, multi-location ops). Modern minimal style, no photorealistic faces."
+        ),
     },
-    "curious": {
-        "visual_only": 1.6,
-        "flat_illustration": 1.5,
-        "text_slide": 1.3,
-        "comparison_graphic": 1.2,
-    },
-    "actionable": {
-        "people_at_work": 1.8,
-        "simple_infographic": 1.5,
-        "minimal_chart": 1.3,
-        "place_photo": 1.2,
-        "text_slide": 1.0,
+    "simple_infographic": {
+        "uses_text": True,
+        "instruction": (
+            "Single-insight infographic slide — 3 steps or 3 facts from the post with icons and "
+            "short labels. Professional LinkedIn infographic, not a multi-tier hierarchy diagram."
+        ),
     },
 }
 
@@ -201,6 +160,8 @@ def _is_bad_prompt(prompt: str) -> tuple[bool, str]:
         return True, "org chart icons"
     if any(term in lowered for term in METAPHOR_SLOP_TERMS):
         return True, "unrelated metaphor"
+    if any(term in lowered for term in STOCK_PHOTO_CLICHES):
+        return True, "AI stock photo cliché"
     return False, ""
 
 
@@ -222,43 +183,67 @@ def _normalize_format_key(raw: str) -> str:
         "stat_card": "stat_slide",
         "carousel_slide": "text_slide",
         "quote_hook": "text_slide",
-        "minimal_chart": "minimal_chart",
-        "comparison_graphic": "comparison_graphic",
-        "flat_illustration": "flat_illustration",
-        "topic_photo": "place_photo",
-        "workplace_scene": "people_at_work",
-        "research_evidence": "minimal_chart",
-        "operational_snapshot": "people_at_work",
+        "chart": "minimal_chart",
+        "graph": "minimal_chart",
+        "infographic": "simple_infographic",
+        "illustration": "flat_illustration",
+        "comparison": "comparison_graphic",
+        "visual_only": "flat_illustration",
+        "place_photo": "flat_illustration",
+        "people_at_work": "flat_illustration",
     }
     key = aliases.get(key, key)
-    return key if key in VISUAL_FORMATS else "visual_only"
+    return key if key in VISUAL_FORMATS else "text_slide"
 
 
-def _pick_visual_format(analysis: dict, draft_style: str) -> str:
-    """Rotate formats so regenerations feel different — like posting on LinkedIn over time."""
-    style_key = draft_style.strip().lower() or "general"
-    style_weights = STYLE_FORMAT_WEIGHTS.get(style_key, {})
+def _rank_formats(analysis: dict, draft_style: str) -> list[str]:
+    """Best format order for this post — regenerate cycles through the list."""
+    style = draft_style.strip().lower() or "general"
+    has_stat = bool(analysis.get("stat_text")) or _has_stat(analysis.get("hook", ""))
+    has_comparison = any(
+        w in (analysis.get("post_theme", "") + analysis.get("hook", "")).lower()
+        for w in ("vs", "without", "with vs", "before", "after", "while others", "break even", "2.0x", "8x", "4x")
+    )
 
-    candidates: list[str] = []
-    weights: list[float] = []
-    for fmt, meta in VISUAL_FORMATS.items():
-        if fmt == "stat_slide" and not analysis.get("stat_text") and not _has_stat(analysis.get("hook", "")):
-            continue
-        w = style_weights.get(fmt, 1.0)
-        if fmt in ("text_slide", "stat_slide"):
-            w *= 0.7  # text slides less often overall
-        candidates.append(fmt)
-        weights.append(w)
-
-    if not candidates:
-        return "visual_only"
-
-    # ~30% chance to use Claude's suggestion if valid
+    order: list[str] = []
     suggested = _normalize_format_key(analysis.get("recommended_format", ""))
-    if suggested in candidates and random.random() < 0.3:
-        return suggested
+    if suggested:
+        order.append(suggested)
 
-    return random.choices(candidates, weights=weights, k=1)[0]
+    if has_stat:
+        order.extend(["stat_slide", "minimal_chart"])
+    if has_comparison:
+        order.extend(["comparison_graphic", "minimal_chart"])
+    if style == "analytical":
+        order.extend(["minimal_chart", "stat_slide", "simple_infographic"])
+    elif style == "provocative":
+        order.extend(["text_slide", "comparison_graphic", "stat_slide"])
+    elif style == "story":
+        order.extend(["text_slide", "flat_illustration", "comparison_graphic"])
+    elif style == "curious":
+        order.extend(["text_slide", "simple_infographic"])
+    elif style == "actionable":
+        order.extend(["simple_infographic", "comparison_graphic", "minimal_chart"])
+
+    order.extend(["text_slide", "flat_illustration", "minimal_chart", "comparison_graphic", "stat_slide", "simple_infographic"])
+
+    seen: set[str] = set()
+    ranked: list[str] = []
+    for fmt in order:
+        if fmt in VISUAL_FORMATS and fmt not in seen:
+            if fmt == "stat_slide" and not has_stat and not analysis.get("stat_text"):
+                continue
+            seen.add(fmt)
+            ranked.append(fmt)
+    return ranked or ["text_slide"]
+
+
+def _pick_visual_format(analysis: dict, draft_style: str, variation_seed: str = "") -> str:
+    ranked = _rank_formats(analysis, draft_style)
+    if not variation_seed:
+        return ranked[0]
+    idx = int(variation_seed[:8], 16) % len(ranked)
+    return ranked[idx]
 
 
 def _parse_visual_analysis(raw: str, draft_text: str) -> dict:
@@ -273,7 +258,8 @@ def _parse_visual_analysis(raw: str, draft_text: str) -> dict:
         "stat_text": stat_text,
         "concrete_subjects": [],
         "post_theme": "",
-        "recommended_format": "visual_only",
+        "visual_concept": f"LinkedIn slide about: {hook[:100]}",
+        "recommended_format": "text_slide",
     }
     try:
         data = json.loads(cleaned)
@@ -287,8 +273,9 @@ def _parse_visual_analysis(raw: str, draft_text: str) -> dict:
                     str(s).strip() for s in (data.get("concrete_subjects") or []) if str(s).strip()
                 ][:6],
                 "post_theme": str(data.get("post_theme") or "").strip(),
+                "visual_concept": str(data.get("visual_concept") or defaults["visual_concept"]).strip()[:300],
                 "recommended_format": _normalize_format_key(
-                    str(data.get("recommended_format") or "visual_only")
+                    str(data.get("recommended_format") or "text_slide")
                 ),
             }
     except (json.JSONDecodeError, TypeError, ValueError):
@@ -302,32 +289,35 @@ def _analyze_draft_for_visual(draft_text: str, topic_name: str, draft_style: str
 
     topic_block = f"\nTopic: {topic_name}" if topic_name else ""
     formats_list = ", ".join(VISUAL_FORMATS.keys())
-    prompt = f"""Analyze this LinkedIn draft for cover image planning. Return JSON only.
+    prompt = f"""Plan ONE LinkedIn cover image for this draft. Return JSON only.
 {topic_block}
 Draft style: {draft_style or "general"}
 
 Draft:
 {draft_text[:2200]}
 
-Valid format keys: {formats_list}
+Formats (pick best): {formats_list}
+
+Think: what single designed graphic would a healthcare operator post with this text?
+NOT a stock photo of a person in a hallway.
 
 Return exactly:
 {{
   "industry": "e.g. healthcare, pharmacy",
   "hook": "opening hook in one line",
-  "headline_text": "short headline IF a text slide fits, else empty string",
-  "stat_text": "key number/percentage if any, else empty string",
-  "concrete_subjects": ["2-4 things to show: places, roles, objects from the post"],
-  "post_theme": "one sentence on what the post is about",
-  "recommended_format": "one format key that fits — vary: not always text_slide"
+  "headline_text": "short text for a headline slide, max 10 words",
+  "stat_text": "key stat if any (e.g. 60-80%), else empty",
+  "post_theme": "one sentence on the post's core message",
+  "visual_concept": "2 sentences describing EXACTLY what to design — e.g. bar chart comparing 8x vs 4x EBITDA with/without district supervisors on navy slide",
+  "recommended_format": "best format key from the list"
 }}"""
 
     try:
         raw = claude_service.complete(
             prompt=prompt,
             system=(
-                "Plan varied LinkedIn cover images. Prefer photos or visuals without text when "
-                "the post is narrative. Return valid JSON only."
+                "You plan LinkedIn slide/chart graphics. Never recommend stock photos or "
+                "people in corridors. Return valid JSON only."
             ),
             model=settings.anthropic_model_fast,
             max_tokens=400,
@@ -349,7 +339,7 @@ def _text_instruction(analysis: dict, fmt: str) -> str:
     headline = analysis.get("headline_text") or analysis.get("hook", "")
     if headline:
         parts.append(f'Headline text (max 10 words): "{headline[:80]}"')
-    return "Include on image: " + "; ".join(parts) if parts else _text_instruction(analysis, "visual_only")
+    return "Include on image: " + "; ".join(parts) if parts else "Do NOT include text, words, or typography in the image."
 
 
 class ImageService:
@@ -395,41 +385,39 @@ class ImageService:
         style_key = draft_style.strip().lower() or "general"
         label = draft_label.strip() or style_key.replace("_", " ").title()
         analysis = _analyze_draft_for_visual(draft_text, topic_name, style_key)
-        chosen_format = _pick_visual_format(analysis, style_key)
+        chosen_format = _pick_visual_format(analysis, style_key, variation_seed)
         fmt_meta = VISUAL_FORMATS[chosen_format]
-        subjects = ", ".join(analysis["concrete_subjects"]) or analysis["industry"]
         rejection_note = ""
-        seed = variation_seed or uuid.uuid4().hex[:8]
+        concept = analysis.get("visual_concept") or analysis.get("post_theme") or analysis.get("hook")
 
         if claude_service.is_configured:
             for attempt in range(3):
                 prompt = f"""Write one image generation prompt for a LinkedIn post cover image.
 {topic_block}
 
-ASSIGNED VISUAL FORMAT (follow exactly): {chosen_format}
-Format direction: {fmt_meta['instruction']}
+EXACT VISUAL TO CREATE:
+{concept}
 
-POST CONTEXT:
+FORMAT: {chosen_format}
+{fmt_meta['instruction']}
+
+POST:
 - Industry: {analysis['industry']}
 - Hook: {analysis['hook']}
-- Theme: {analysis['post_theme'] or analysis['hook']}
-- Subjects/settings to draw from: {subjects}
-- Draft style ({label}): match tone but keep the assigned format
-- Variation seed: {seed} (use a fresh composition — different from a generic template)
+- Theme: {analysis['post_theme']}
+- Draft style: {label}
+{_text_instruction(analysis, chosen_format)}
 
-TEXT: {_text_instruction(analysis, chosen_format)}
-
-FULL DRAFT:
-{draft_text[:2000]}
+DRAFT TEXT:
+{draft_text[:1800]}
 {hint_block}
 {rejection_note}
 
 Instructions:
-- Must clearly relate to THIS post — a LinkedIn reader sees the connection immediately
-- Execute the assigned format well; do NOT switch to a different format
-- Professional, polished, varied — like real LinkedIn content
-- NO org-chart icon diagrams; NO random metaphors (sand, fog, surreal)
-- Specify composition, colors, medium (photo vs illustration vs chart), and mood"""
+- Execute the EXACT VISUAL concept above as a designed slide/chart/illustration
+- Flat designed graphic — NOT a photorealistic photo of a person
+- Must directly support what this post is saying
+- Professional LinkedIn B2B aesthetic, landscape 16:9"""
 
                 try:
                     result = claude_service.complete(
@@ -437,7 +425,7 @@ Instructions:
                         system=LINKEDIN_IMAGE_SYSTEM,
                         model=settings.anthropic_model,
                         max_tokens=550,
-                        temperature=0.85,
+                        temperature=0.7,
                     ).strip()
                     bad, reason = _is_bad_prompt(result)
                     if not bad:
@@ -449,7 +437,8 @@ Instructions:
                         attempt + 1,
                     )
                     rejection_note = (
-                        f"\nCRITICAL: Stay in format '{chosen_format}'. No org charts, no sand/fog/surreal metaphors."
+                        "\nCRITICAL: Design a flat slide/chart/illustration only. "
+                        "No people, no hallways, no tablets, no stock photos."
                     )
                 except Exception as e:
                     logger.warning(f"Claude image prompt failed, using fallback: {e}")
@@ -507,15 +496,14 @@ Keep it professional and LinkedIn-native. Output ONLY the new prompt."""
         analysis: Optional[dict] = None,
     ) -> str:
         info = analysis or _parse_visual_analysis("", draft_text)
-        fmt = chosen_format if chosen_format in VISUAL_FORMATS else "visual_only"
+        fmt = chosen_format if chosen_format in VISUAL_FORMATS else "text_slide"
         meta = VISUAL_FORMATS[fmt]
-        industry = info.get("industry") or "business"
-        hook = info.get("hook") or _draft_hook(draft_text)
+        concept = info.get("visual_concept") or info.get("hook") or _draft_hook(draft_text)
         text_part = _text_instruction(info, fmt)
         base = (
-            f"LinkedIn post cover image, format: {fmt}. {meta['instruction']} "
-            f"Topic: {industry}. Post about: {hook}. {text_part} "
-            f"Landscape 16:9, polished professional quality."
+            f"Professional LinkedIn {fmt} graphic, flat designed slide — NOT a photograph. "
+            f"{meta['instruction']} Visual: {concept}. {text_part} "
+            f"Navy and white palette, landscape 16:9, clean Canva-style layout."
         )
         if user_hint.strip():
             base += f" {user_hint.strip()}"

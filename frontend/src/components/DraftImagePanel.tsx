@@ -89,13 +89,13 @@ export default function DraftImagePanel({
           <textarea
             value={promptHint}
             onChange={(e) => setPromptHint(e.target.value)}
-            placeholder="e.g. photo of a pharmacy floor, simple chart, no text — just a clean workplace shot…"
+            placeholder="e.g. bar chart of 8x vs 4x EBITDA, stat slide with 60-80%, headline only…"
             rows={2}
             className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 placeholder:text-slate-400 focus:border-brand-400 focus:outline-none focus:ring-1 focus:ring-brand-400"
           />
           <p className="mt-1 text-xs text-slate-400">
-            Each click picks a different LinkedIn-style visual — photo, chart, illustration, or
-            text slide — matched to this draft. Regenerate for a new format.
+            Creates a designed LinkedIn graphic tied to this post — chart, stat slide, headline, or
+            flat illustration. Click again for a different format.
           </p>
         </div>
       )}
