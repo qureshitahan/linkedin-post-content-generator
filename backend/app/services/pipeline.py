@@ -21,8 +21,9 @@ from app.services.topic_scoring import (
     compute_volume_score,
 )
 from app.services.trend_analysis import trend_analysis_service
-from app.run_settings import RunSettings, apply_run_settings
 from app.services.x_api import x_api_service
+from app.run_settings import RunSettings, apply_run_settings
+from app.services.url_utils import resolve_post_urls
 
 logger = logging.getLogger(__name__)
 
@@ -93,7 +94,9 @@ class AnalysisPipeline:
             per_query=rs.posts_per_query,
         )
         pool = gathered["posts"]
+        raw_by_query = gathered.get("by_query", {})
         active_sources = gathered["active_sources"]
+        await resolve_post_urls(pool)
         objective.sources_used = ",".join(active_sources)
         db.commit()
 
@@ -102,16 +105,21 @@ class AnalysisPipeline:
         db.commit()
 
         for p in pool:
-            p["_relevance"] = score_post_relevance(p.get("text", ""), parsed)
+            p["_relevance"] = score_post_relevance(
+                p.get("text", ""),
+                parsed,
+                p.get("_query", ""),
+            )
 
         relevant = [p for p in pool if p["_relevance"] > 0]
-        if len(relevant) < settings.min_relevant_posts_per_topic:
-            # Relax: keep non-negative posts so we can still try, but flag low signal
-            relevant = sorted(
+        if len(relevant) < settings.target_min_topics:
+            soft = sorted(
                 [p for p in pool if p["_relevance"] >= 0],
                 key=lambda p: p["_relevance"],
                 reverse=True,
-            )[:20]
+            )
+            if len(soft) > len(relevant):
+                relevant = soft[: max(25, settings.target_min_topics * 8)]
 
         # Drop dead X posts (no traction) when we still have enough real signal,
         # so we stop citing 2-impression tweets from no-name accounts.
@@ -122,12 +130,13 @@ class AnalysisPipeline:
 
         relevant.sort(key=lambda p: p["_relevance"], reverse=True)
 
-        # Record how many ON-TOPIC posts each query produced
+        # Record gathered vs on-topic counts per query
         relevant_by_query: Counter = Counter(p.get("_query", "") for p in relevant)
         search_queries = (
             db.query(SearchQuery).filter(SearchQuery.objective_id == objective.id).all()
         )
         for sq in search_queries:
+            sq.raw_post_count = raw_by_query.get(sq.query_text, 0)
             sq.post_count = relevant_by_query.get(sq.query_text, 0)
             sq.count_checked_at = datetime.utcnow()
         db.commit()

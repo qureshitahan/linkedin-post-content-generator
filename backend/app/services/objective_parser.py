@@ -44,8 +44,9 @@ STOPWORDS = frozenset(
         "would",
         "like",
         "make",
-        "market",
         "trending",
+        "research",
+        "deeply",
     }
 )
 
@@ -281,18 +282,44 @@ def _keyword_in_text(keyword: str, text: str) -> bool:
     return re.search(rf"\b{re.escape(keyword)}\b", text) is not None
 
 
-def score_post_relevance(post_text: str, parsed: ParsedObjective) -> float:
-    """Score how well an X post matches this user's stated goal (not a fixed industry list)."""
+def score_post_relevance(
+    post_text: str,
+    parsed: ParsedObjective,
+    query: str = "",
+) -> float:
+    """Score how well a post matches this user's stated goal (not a fixed industry list)."""
     text = post_text.lower()
     score = 0.0
 
     for domain in parsed.focus_domains:
         if _keyword_in_text(domain, text):
-            score += +2.0
+            score += 2.0
 
     for keyword in parsed.relevance_keywords:
         if _keyword_in_text(keyword, text):
             score += 1.0
+
+    # Direct terms from the user's goal text (broader than LLM-parsed keywords alone)
+    goal_terms = re.findall(r"\b[a-z]{4,}\b", (parsed.content_goal or "").lower())
+    seen_goal: set[str] = set()
+    for term in goal_terms:
+        if term in STOPWORDS or term in seen_goal:
+            continue
+        seen_goal.add(term)
+        if _keyword_in_text(term, text):
+            score += 0.75
+
+    # Posts returned for a query should get credit when the query terms appear in the headline
+    if query:
+        q_terms = [
+            w for w in re.findall(r"\b[a-z]{3,}\b", query.lower()) if w not in STOPWORDS
+        ]
+        if q_terms:
+            matches = sum(1 for t in q_terms if t in text)
+            if matches >= max(1, len(q_terms) // 2):
+                score += 1.5
+            elif matches:
+                score += matches * 0.5
 
     for topic in parsed.avoid_topics:
         if _keyword_in_text(topic, text):
@@ -306,7 +333,7 @@ def filter_relevant_posts(posts: list[dict], parsed: ParsedObjective, min_keep: 
     if not posts:
         return posts
 
-    scored = [(score_post_relevance(p.get("text", ""), parsed), p) for p in posts]
+    scored = [(score_post_relevance(p.get("text", ""), parsed, p.get("_query", "")), p) for p in posts]
     scored.sort(key=lambda x: x[0], reverse=True)
 
     if not parsed.relevance_keywords and not parsed.focus_domains:

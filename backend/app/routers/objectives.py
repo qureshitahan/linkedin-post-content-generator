@@ -24,6 +24,7 @@ from app.services.principle_context import build_parsed_objective
 from app.run_settings import RunSettings
 from app.services.pipeline import analysis_pipeline
 from app.services.trend_analysis import trend_analysis_service
+from app.services.url_utils import resolve_post_urls
 from app.services.x_api import XAPIError, x_api_service
 
 router = APIRouter(prefix="/api/objectives", tags=["objectives"])
@@ -50,7 +51,7 @@ def _evidence_to_posts(topic: Topic, parsed) -> list[dict]:
         }
         if ev.source == "news" or ev.source == "industry":
             post["engagement_proxy"] = 45
-        post["_relevance"] = score_post_relevance(ev.post_text, parsed)
+        post["_relevance"] = score_post_relevance(ev.post_text, parsed, "")
         posts.append(post)
     return posts
 
@@ -187,6 +188,7 @@ async def regenerate_draft(
         )
         parsed = await build_parsed_objective(db, objective, topic_query=topic_query)
         posts = _evidence_to_posts(topic, parsed)
+        await resolve_post_urls(posts)
         new_draft = await trend_analysis_service.regenerate_draft(
             topic_name=topic.name,
             posts=posts,
@@ -254,6 +256,7 @@ async def generate_drafts(
         )
         parsed = await build_parsed_objective(db, objective, topic_query=topic_query)
         posts = _evidence_to_posts(topic, parsed)
+        await resolve_post_urls(posts)
         result = await trend_analysis_service.generate_drafts(
             topic_name=topic.name,
             posts=posts,

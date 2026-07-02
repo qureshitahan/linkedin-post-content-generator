@@ -55,6 +55,7 @@ export interface SearchQuery {
   id: number;
   query_text: string;
   post_count: number | null;
+  raw_post_count: number | null;
   count_checked_at: string | null;
 }
 

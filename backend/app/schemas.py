@@ -16,6 +16,7 @@ class SearchQueryOut(BaseModel):
     id: int
     query_text: str
     post_count: Optional[int]
+    raw_post_count: Optional[int] = None
     count_checked_at: Optional[datetime]
 
     model_config = {"from_attributes": True}

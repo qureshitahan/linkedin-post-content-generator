@@ -7,6 +7,7 @@ from app.config import settings
 from app.run_settings import DRAFT_STYLE_OPTIONS, active_run_settings
 from app.services.claude import claude_service
 from app.services.objective_parser import ParsedObjective, filter_relevant_posts
+from app.services.url_utils import is_usable_reference_url
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +83,8 @@ def _normalize_drafts(raw_drafts: list, ref_url: str, fallback_text: str) -> lis
 
 def _finalize_draft_static(draft: str, ref_url: str) -> str:
     draft = _clean_ai_punctuation(draft)
-    if ref_url and ref_url not in draft:
+    draft = re.sub(r"\n\nReference:\s*https?://[^\s]+", "", draft, flags=re.IGNORECASE)
+    if ref_url and is_usable_reference_url(ref_url) and ref_url not in draft:
         draft = f"{draft.rstrip()}\n\nReference: {ref_url}"
     return draft
 
@@ -134,47 +136,43 @@ class TrendAnalysisService:
         """Pick the most credible link to cite, in priority order:
         1) high-traction X research buzz (breakthrough announcements),
         2) research papers (arxiv, pubmed, preprint),
-        3) curated news/industry articles,
+        3) curated news/industry articles with direct publisher URLs,
         4) embedded URLs in posts,
         5) Reddit/HN permalinks,
         6) highest-engagement post URL."""
+
         def _engagement(p: dict) -> float:
             return (p.get("likes", 0) or 0) + (p.get("retweets", 0) or 0) * 3 + (
                 p.get("comments", p.get("replies", 0)) or 0
             ) * 2
 
+        def _url(p: dict) -> str:
+            return (p.get("post_url") or "").strip()
+
         buzz = [
             p for p in posts
-            if p.get("content_type") == "research_buzz" and p.get("post_url")
+            if p.get("content_type") == "research_buzz" and is_usable_reference_url(_url(p))
         ]
         if buzz:
             top = max(buzz, key=lambda p: (_engagement(p), p.get("_relevance", 0.0)))
-            return {"url": top["post_url"], "source_post": top}
+            return {"url": _url(top), "source_post": top}
 
         papers = [
             p for p in posts
-            if p.get("content_type") == "research_paper" and p.get("post_url")
+            if p.get("content_type") == "research_paper" and is_usable_reference_url(_url(p))
         ]
         if papers:
             top = max(papers, key=lambda p: p.get("_relevance", 0.0))
-            return {"url": top["post_url"], "source_post": top}
+            return {"url": _url(top), "source_post": top}
 
         article_posts = [
             p
             for p in posts
-            if p.get("source") in ("news", "industry", "devto") and p.get("post_url")
+            if p.get("source") in ("news", "industry", "devto") and is_usable_reference_url(_url(p))
         ]
-        # 1) Prefer a clean, direct publisher link (industry feeds give these)
-        clean = [
-            p for p in article_posts if "news.google.com" not in p.get("post_url", "")
-        ]
-        if clean:
-            top = max(clean, key=lambda p: p.get("_relevance", 0.0))
-            return {"url": top["post_url"], "source_post": top}
-        # 2) Otherwise any curated article (Google News redirect still resolves)
         if article_posts:
             top = max(article_posts, key=lambda p: p.get("_relevance", 0.0))
-            return {"url": top["post_url"], "source_post": top}
+            return {"url": _url(top), "source_post": top}
 
         engaged = sorted(
             posts,
@@ -182,21 +180,22 @@ class TrendAnalysisService:
             reverse=True,
         )
 
-        # 2) Clean external URL inside post text (e.g. a research paper, video)
         for post in engaged:
             for match in _URL_RE.findall(post.get("text", "")):
                 url = match.rstrip(".,);]")
-                if not any(host in url for host in _BAD_LINK_HOSTS):
+                if is_usable_reference_url(url) and not any(host in url for host in _BAD_LINK_HOSTS):
                     return {"url": url, "source_post": post}
 
-        # 3) Reddit / HN permalinks are useful discussion references
         for post in engaged:
-            if post.get("source") in ("reddit", "hackernews") and post.get("post_url"):
-                return {"url": post["post_url"], "source_post": post}
+            url = _url(post)
+            if post.get("source") in ("reddit", "hackernews") and is_usable_reference_url(url):
+                return {"url": url, "source_post": post}
 
-        # 4) Fall back to the highest-engagement post URL
-        if engaged:
-            return {"url": engaged[0].get("post_url", ""), "source_post": engaged[0]}
+        for post in engaged:
+            url = _url(post)
+            if is_usable_reference_url(url):
+                return {"url": url, "source_post": post}
+
         return {"url": "", "source_post": {}}
 
     def _fallback_analysis(

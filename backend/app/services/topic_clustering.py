@@ -8,6 +8,7 @@ actually match the user's goal — across X, Reddit, and Hacker News.
 import json
 import logging
 import re
+from collections import defaultdict
 from typing import Dict, List
 
 from app.config import settings
@@ -32,6 +33,26 @@ class TopicClusteringService:
             )
         return "\n".join(lines)
 
+    def _min_posts_for_theme(self, total_posts: int) -> int:
+        if total_posts <= 3:
+            return 1
+        return settings.min_relevant_posts_per_topic
+
+    def _query_cluster(self, posts: List[Dict]) -> List[Dict]:
+        """When data is thin, group by search query so multiple angles still surface."""
+        buckets: Dict[str, List[int]] = defaultdict(list)
+        for i, p in enumerate(posts):
+            q = (p.get("_query") or "").strip()
+            if q:
+                buckets[q].append(i)
+
+        themes = []
+        for query, idxs in sorted(buckets.items(), key=lambda item: len(item[1]), reverse=True):
+            label = query if len(query) <= 60 else f"{query[:57]}..."
+            themes.append({"name": label, "post_indices": idxs})
+
+        return themes[: settings.max_topics_to_analyze]
+
     async def cluster(
         self, posts: List[Dict], parsed: ParsedObjective
     ) -> List[Dict]:
@@ -39,8 +60,15 @@ class TopicClusteringService:
         if not posts:
             return []
 
-        if not self.is_configured or len(posts) < settings.min_relevant_posts_per_topic:
-            return self._fallback_cluster(posts, parsed)
+        min_posts = self._min_posts_for_theme(len(posts))
+
+        if len(posts) <= settings.target_min_topics * 2:
+            query_themes = self._query_cluster(posts)
+            if len(query_themes) >= 2:
+                return query_themes
+
+        if not self.is_configured or len(posts) < min_posts:
+            return self._fallback_cluster(posts, parsed, min_posts)
 
         max_topics = settings.max_topics_to_analyze
         posts_block = self._format_posts(posts[:60])
@@ -55,7 +83,7 @@ On-topic posts (already filtered to match the goal), indexed:
 TASK:
 Group these posts into {max_topics} or fewer SPECIFIC themes that this writer could post about.
 - Each theme must be a concrete sub-topic, debate, tool, or shift — not a broad category.
-- Only include a theme if at least {settings.min_relevant_posts_per_topic} posts support it.
+- Only include a theme if at least {min_posts} post(s) support it.
 - A post can belong to at most one theme. Skip posts that don't fit a strong theme.
 - Order themes from most to least post-worthy for THIS writer.
 
@@ -83,7 +111,7 @@ Return ONLY JSON:
                     for i in t.get("post_indices", [])
                     if isinstance(i, int) and 0 <= i < len(posts)
                 ]
-                if name and len(idxs) >= settings.min_relevant_posts_per_topic:
+                if name and len(idxs) >= min_posts:
                     themes.append({"name": name, "post_indices": idxs})
 
             if themes:
@@ -91,10 +119,14 @@ Return ONLY JSON:
         except Exception as e:
             logger.error(f"Theme clustering failed: {e}")
 
-        return self._fallback_cluster(posts, parsed)
+        query_themes = self._query_cluster(posts)
+        if query_themes:
+            return query_themes
+
+        return self._fallback_cluster(posts, parsed, min_posts)
 
     def _fallback_cluster(
-        self, posts: List[Dict], parsed: ParsedObjective
+        self, posts: List[Dict], parsed: ParsedObjective, min_posts: int
     ) -> List[Dict]:
         """Group posts by the focus domain / keyword they match most strongly."""
         anchors = (parsed.focus_domains or []) + (parsed.relevance_keywords or [])
@@ -128,14 +160,20 @@ Return ONLY JSON:
         themes = [
             {"name": name, "post_indices": idxs}
             for name, idxs in buckets.items()
-            if len(idxs) >= settings.min_relevant_posts_per_topic
+            if len(idxs) >= min_posts
         ]
         themes.sort(
-            key=lambda t: sum(score_post_relevance(posts[i].get("text", ""), parsed) for i in t["post_indices"]),
+            key=lambda t: sum(
+                score_post_relevance(posts[i].get("text", ""), parsed, posts[i].get("_query", ""))
+                for i in t["post_indices"]
+            ),
             reverse=True,
         )
 
         if not themes:
+            query_themes = self._query_cluster(posts)
+            if query_themes:
+                return query_themes
             themes = [
                 {
                     "name": catch_all_name,

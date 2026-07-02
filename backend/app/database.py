@@ -33,6 +33,7 @@ _ADDED_COLUMNS = {
         "sources_summary": "VARCHAR(255)",
         "linkedin_drafts": "TEXT",
     },
+    "search_queries": {"raw_post_count": "INTEGER"},
     "evidence_posts": {"source": "VARCHAR(30) DEFAULT 'x'", "content_type": "VARCHAR(30)"},
 }
 

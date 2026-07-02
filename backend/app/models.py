@@ -69,6 +69,7 @@ class SearchQuery(Base):
     objective_id: Mapped[int] = mapped_column(ForeignKey("objectives.id"), nullable=False)
     query_text: Mapped[str] = mapped_column(String(500), nullable=False)
     post_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    raw_post_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     count_checked_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
     objective: Mapped["Objective"] = relationship(back_populates="search_queries")
