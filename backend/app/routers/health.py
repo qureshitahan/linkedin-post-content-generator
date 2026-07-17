@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from app.config import settings
 from app.schemas import HealthOut
 from app.services.image_service import image_service
+from app.services.video_service import video_service
 from app.services.sources import source_aggregator
 from app.services.sources.arxiv_source import arxiv_source
 from app.services.sources.devto_source import devto_source
@@ -27,6 +28,9 @@ def health_check():
         openai_configured=image_service.is_configured,
         openai_key_last4=image_service.key_last4 if image_service.is_configured else "",
         image_generation_ready=image_service.is_configured and image_service.prompt_engine_available,
+        video_configured=video_service.is_configured,
+        video_key_last4=video_service.key_last4 if video_service.is_configured else "",
+        video_generation_ready=video_service.is_configured,
         reddit_configured=reddit_source.is_configured,
         arxiv_configured=arxiv_source.is_configured,
         pubmed_configured=pubmed_source.is_configured,

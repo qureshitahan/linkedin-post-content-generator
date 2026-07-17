@@ -4,11 +4,13 @@ backend/.env
 .env.*
 
 # Python
+venv/
 backend/venv/
-backend/__pycache__/
-backend/*.pyc
+__pycache__/
+*.pyc
 backend/*.db
 backend/generated_images/
+backend/generated_videos/
 
 # Node
 frontend/node_modules/

@@ -50,6 +50,11 @@ export default function Header({ health }: Props) {
             >
               Images {health.image_generation_ready ? 'Ready' : health.openai_configured ? 'Add Claude' : 'OpenAI optional'}
             </span>
+            <span
+              className={`badge ${health.video_generation_ready ? 'bg-green-100 text-green-800' : 'bg-slate-200 text-slate-600'}`}
+            >
+              Video {health.video_generation_ready ? 'Ready' : 'Sora optional'}
+            </span>
           </div>
         )}
       </div>

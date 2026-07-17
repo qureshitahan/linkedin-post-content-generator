@@ -11,6 +11,7 @@ interface Props {
   rank: number;
   objectiveId: number;
   imageGenerationReady: boolean;
+  videoGenerationReady?: boolean;
 }
 
 function ScoreBar({ label, value }: { label: string; value: number }) {
@@ -49,6 +50,7 @@ export default function TopicCard({
   rank,
   objectiveId,
   imageGenerationReady,
+  videoGenerationReady = false,
 }: Props) {
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [drafts, setDrafts] = useState<LinkedInDraft[]>(() => draftsFromTopic(topic));
@@ -298,6 +300,7 @@ export default function TopicCard({
                           objectiveId={objectiveId}
                           topicId={topic.id}
                           imageGenerationReady={imageGenerationReady}
+                          videoGenerationReady={videoGenerationReady}
                           autoGenerateVersion={autoImageVersions[index] ?? 0}
                         />
                       </div>

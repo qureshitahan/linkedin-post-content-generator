@@ -1,5 +1,8 @@
+import asyncio
 import json
 import logging
+import time
+import uuid
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -13,12 +16,16 @@ from app.schemas import (
     GenerateDraftsRequest,
     GenerateImageRequest,
     GenerateImageResponse,
+    GenerateVideoRequest,
     ObjectiveCreate,
     ObjectiveOut,
     TopicOut,
     TrendItemOut,
+    VideoJobStart,
+    VideoJobStatus,
 )
 from app.services.image_service import image_service
+from app.services.video_service import video_service
 from app.services.objective_parser import score_post_relevance
 from app.services.principle_context import build_parsed_objective
 from app.run_settings import RunSettings
@@ -29,6 +36,10 @@ from app.services.x_api import XAPIError, x_api_service
 
 router = APIRouter(prefix="/api/objectives", tags=["objectives"])
 logger = logging.getLogger(__name__)
+
+# In-memory store for async video jobs: job_id -> {status, ts, result fields | error}.
+# Single-worker dev server; jobs are pruned after an hour.
+_VIDEO_JOBS: dict = {}
 
 
 def _evidence_to_posts(topic: Topic, parsed) -> list[dict]:
@@ -316,6 +327,98 @@ async def generate_topic_image(
     except Exception as e:
         logger.exception("Image generation failed for topic %s", topic_id)
         raise HTTPException(status_code=500, detail=f"Image generation failed: {str(e)}")
+
+
+async def _run_video_job(job_id: str, draft_text: str, topic_name: str, hint: str, voiceover: bool):
+    """Background worker: generates the video and records the result in _VIDEO_JOBS."""
+    try:
+        result = await video_service.generate_from_draft(
+            draft_text=draft_text,
+            topic_name=topic_name,
+            hint=hint,
+            voiceover=voiceover,
+        )
+        _VIDEO_JOBS[job_id] = {"status": "completed", "ts": time.time(), **result}
+    except Exception as e:  # noqa: BLE001 - surface any failure to the poller
+        logger.exception("Video job %s failed", job_id)
+        _VIDEO_JOBS[job_id] = {"status": "failed", "ts": time.time(), "error": str(e)}
+
+
+def _prune_video_jobs(max_age: float = 3600.0):
+    """Drop finished jobs older than an hour so the in-memory store stays small."""
+    now = time.time()
+    stale = [
+        jid for jid, job in _VIDEO_JOBS.items()
+        if job.get("status") in ("completed", "failed") and now - job.get("ts", now) > max_age
+    ]
+    for jid in stale:
+        _VIDEO_JOBS.pop(jid, None)
+
+
+@router.post(
+    "/{objective_id}/topics/{topic_id}/generate-video",
+    response_model=VideoJobStart,
+)
+async def generate_topic_video(
+    objective_id: int,
+    topic_id: int,
+    payload: GenerateVideoRequest,
+    db: Session = Depends(get_db),
+):
+    """Start a text-to-video job (OpenAI Sora) from the draft content and return a job id.
+
+    Generation takes minutes, so it runs in the background; poll the status endpoint for the
+    result. Costs Sora credits — user-triggered only.
+    """
+    topic = (
+        db.query(Topic)
+        .filter(Topic.id == topic_id, Topic.objective_id == objective_id)
+        .first()
+    )
+    if not topic:
+        raise HTTPException(status_code=404, detail="Topic not found")
+
+    if not video_service.is_configured:
+        raise HTTPException(
+            status_code=503,
+            detail="Video generation not configured. Add OPENAI_API_KEY to backend/.env (OpenAI Sora).",
+        )
+
+    _prune_video_jobs()
+    job_id = uuid.uuid4().hex
+    _VIDEO_JOBS[job_id] = {"status": "processing", "ts": time.time()}
+    asyncio.create_task(
+        _run_video_job(
+            job_id,
+            payload.draft_text,
+            payload.topic_name or topic.name,
+            payload.motion_hint,
+            payload.voiceover,
+        )
+    )
+    return VideoJobStart(job_id=job_id, status="processing")
+
+
+@router.get(
+    "/{objective_id}/topics/{topic_id}/generate-video/{job_id}",
+    response_model=VideoJobStatus,
+)
+async def get_video_job(objective_id: int, topic_id: int, job_id: str):
+    """Poll a video job started by generate-video."""
+    job = _VIDEO_JOBS.get(job_id)
+    if not job:
+        raise HTTPException(
+            status_code=404,
+            detail="Video job not found (it may have expired or the server restarted).",
+        )
+    return VideoJobStatus(
+        status=job.get("status", "processing"),
+        video_url=job.get("video_url"),
+        prompt_used=job.get("prompt_used"),
+        filename=job.get("filename"),
+        voiceover_script=job.get("voiceover_script"),
+        error=job.get("error"),
+    )
 
 
 @router.get("/trends/location", response_model=List[TrendItemOut])

@@ -121,6 +121,28 @@ class Settings(BaseSettings):
     openai_image_quality: str = "medium"  # low | medium | high | auto
     linkedin_drafts_count: int = 5
 
+    # --- Video generation (OpenAI Sora — image-to-video, on demand) ---
+    # Uses the SAME OPENAI_API_KEY as image generation. Just make sure your OpenAI
+    # account has Sora/video access enabled — no separate key needed.
+    # Model: sora-2 (fast/cheaper) or sora-2-pro (higher quality).
+    openai_video_model: str = "sora-2"
+    # Output resolution. Must be one of Sora's allowed sizes:
+    # 720x1280, 1280x720 (landscape 16:9), 1024x1792, 1792x1024.
+    openai_video_size: str = "1280x720"
+    # Target total length in seconds. A single Sora clip maxes at 12s, so longer
+    # targets are produced with one native extend() (e.g. 20 = 12 + 8).
+    openai_video_seconds: int = 20
+    # Max seconds to wait for a Sora job before giving up.
+    video_poll_timeout_seconds: int = 600
+    video_poll_interval_seconds: int = 5
+
+    # --- Voice-over (OpenAI TTS — Claude writes the script, aligned to the post) ---
+    # Adds a spoken narration track to the video. Uses the same OPENAI_API_KEY.
+    video_voiceover_default: bool = True
+    openai_tts_model: str = "gpt-4o-mini-tts"  # supports tone `instructions`
+    openai_tts_voice: str = "alloy"  # alloy|echo|fable|onyx|nova|shimmer|...
+    openai_tts_format: str = "mp3"
+
     @property
     def cors_origin_list(self) -> List[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]

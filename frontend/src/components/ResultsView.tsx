@@ -5,6 +5,7 @@ import TopicCard from './TopicCard';
 interface Props {
   objective: Objective;
   imageGenerationReady?: boolean;
+  videoGenerationReady?: boolean;
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -31,7 +32,11 @@ const SOURCE_NAMES: Record<string, string> = {
   x: 'X',
 };
 
-export default function ResultsView({ objective, imageGenerationReady = false }: Props) {
+export default function ResultsView({
+  objective,
+  imageGenerationReady = false,
+  videoGenerationReady = false,
+}: Props) {
   const sortedTopics = [...objective.topics].sort((a, b) => b.score - a.score);
   const sources = (objective.sources_used || '')
     .split(',')
@@ -69,6 +74,7 @@ export default function ResultsView({ objective, imageGenerationReady = false }:
                 rank={i + 1}
                 objectiveId={objective.id}
                 imageGenerationReady={imageGenerationReady}
+                videoGenerationReady={videoGenerationReady}
               />
             ))}
           </div>
