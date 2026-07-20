@@ -171,6 +171,9 @@ class HealthOut(BaseModel):
     openai_configured: bool = False
     openai_key_last4: str = ""
     image_generation_ready: bool = False
+    video_configured: bool = False
+    video_key_last4: str = ""
+    video_generation_ready: bool = False
     reddit_configured: bool = False
     arxiv_configured: bool = True
     pubmed_configured: bool = True
@@ -198,6 +201,35 @@ class GenerateImageResponse(BaseModel):
     image_url: str
     prompt_used: str
     filename: str
+
+
+class GenerateVideoRequest(BaseModel):
+    # Text-to-video: the video is generated from the draft content (like the image).
+    draft_text: str = Field(..., min_length=10, max_length=8000)
+    topic_name: str = ""
+    motion_hint: str = ""
+    voiceover: bool = True
+
+
+class GenerateVideoResponse(BaseModel):
+    video_url: str
+    prompt_used: str
+    filename: str
+    voiceover_script: str = ""
+
+
+class VideoJobStart(BaseModel):
+    job_id: str
+    status: str
+
+
+class VideoJobStatus(BaseModel):
+    status: str  # processing | completed | failed
+    video_url: Optional[str] = None
+    prompt_used: Optional[str] = None
+    filename: Optional[str] = None
+    voiceover_script: Optional[str] = None
+    error: Optional[str] = None
 
 
 class PrincipleDocumentOut(BaseModel):

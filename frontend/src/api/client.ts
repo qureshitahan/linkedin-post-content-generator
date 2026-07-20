@@ -144,4 +144,49 @@ export const api = {
     );
     return { ...result, image_url: resolveApiAssetUrl(result.image_url) };
   },
+
+  generateVideo: async (
+    objectiveId: number,
+    topicId: number,
+    body: {
+      draft_text: string;
+      topic_name?: string;
+      motion_hint?: string;
+      voiceover?: boolean;
+    },
+  ) => {
+    // Generation takes minutes, so the backend runs it as a background job and we poll.
+    const base = `/objectives/${objectiveId}/topics/${topicId}/generate-video`;
+    const start = await request<{ job_id: string; status: string }>(base, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    const deadline = Date.now() + 15 * 60 * 1000; // 15 min safety cap
+    while (Date.now() < deadline) {
+      await sleep(4000);
+      const job = await request<{
+        status: string;
+        video_url?: string;
+        prompt_used?: string;
+        filename?: string;
+        voiceover_script?: string;
+        error?: string;
+      }>(`${base}/${start.job_id}`);
+
+      if (job.status === 'completed' && job.video_url) {
+        return {
+          video_url: resolveApiAssetUrl(job.video_url),
+          prompt_used: job.prompt_used ?? '',
+          filename: job.filename ?? '',
+          voiceover_script: job.voiceover_script ?? '',
+        };
+      }
+      if (job.status === 'failed') {
+        throw new Error(job.error || 'Video generation failed');
+      }
+    }
+    throw new Error('Video generation timed out. Please try again.');
+  },
 };

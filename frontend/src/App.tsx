@@ -158,6 +158,7 @@ export default function App() {
                 <ResultsView
                   objective={objective}
                   imageGenerationReady={health?.image_generation_ready ?? false}
+                  videoGenerationReady={health?.video_generation_ready ?? false}
                 />
               </div>
             )}

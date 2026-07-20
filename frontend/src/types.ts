@@ -97,6 +97,8 @@ export interface HealthStatus {
   anthropic_configured: boolean;
   openai_configured: boolean;
   image_generation_ready: boolean;
+  video_configured: boolean;
+  video_generation_ready: boolean;
   reddit_configured: boolean;
   arxiv_configured: boolean;
   pubmed_configured: boolean;

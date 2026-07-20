@@ -8,12 +8,20 @@ interface Props {
   objectiveId: number;
   topicId: number;
   imageGenerationReady: boolean;
+  videoGenerationReady?: boolean;
   autoGenerateVersion?: number;
 }
 
 interface ImageState {
   url: string;
   promptUsed: string;
+  filename: string;
+}
+
+interface VideoState {
+  url: string;
+  promptUsed: string;
+  script: string;
 }
 
 export default function DraftImagePanel({
@@ -22,6 +30,7 @@ export default function DraftImagePanel({
   objectiveId,
   topicId,
   imageGenerationReady,
+  videoGenerationReady = false,
   autoGenerateVersion = 0,
 }: Props) {
   const [image, setImage] = useState<ImageState | null>(null);
@@ -33,6 +42,14 @@ export default function DraftImagePanel({
   const [error, setError] = useState<string | null>(null);
   const [showPromptArea, setShowPromptArea] = useState(false);
   const lastAutoVersionRef = useRef(0);
+
+  // --- Video (text-to-video via OpenAI Sora, generated from the draft) ---
+  const [video, setVideo] = useState<VideoState | null>(null);
+  const [videoGenerating, setVideoGenerating] = useState(false);
+  const [videoProgress, setVideoProgress] = useState(0);
+  const [videoError, setVideoError] = useState<string | null>(null);
+  const [videoHint, setVideoHint] = useState('');
+  const [voiceover, setVoiceover] = useState(true);
 
   useEffect(() => {
     if (!generating) {
@@ -73,7 +90,7 @@ export default function DraftImagePanel({
         previous_prompt: mode === 'edit' && image ? image.promptUsed : '',
         edit_instruction: mode === 'edit' ? editInstruction : '',
       });
-      setImage({ url: result.image_url, promptUsed: result.prompt_used });
+      setImage({ url: result.image_url, promptUsed: result.prompt_used, filename: result.filename });
       setProgress(92);
       if (mode === 'edit') setEditInstruction('');
     } catch (err) {
@@ -91,167 +108,312 @@ export default function DraftImagePanel({
     void generate('new');
   }, [autoGenerateVersion, imageGenerationReady]);
 
+  // Sora clips take minutes, so this bar creeps up slowly.
+  useEffect(() => {
+    if (!videoGenerating) return;
+    setVideoProgress(4);
+    const startedAt = Date.now();
+    const interval = window.setInterval(() => {
+      const elapsedSeconds = (Date.now() - startedAt) / 1000;
+      const estimated = Math.min(92, 4 + Math.round(elapsedSeconds * 0.6));
+      setVideoProgress((current) => Math.max(current, estimated));
+    }, 1000);
+    return () => window.clearInterval(interval);
+  }, [videoGenerating]);
+
+  const generateVideo = async () => {
+    if (!videoGenerationReady) {
+      setVideoError('Add OPENAI_API_KEY (with Sora access) to backend/.env to enable video generation.');
+      return;
+    }
+
+    setVideoGenerating(true);
+    setVideoError(null);
+    setVideo(null);
+    try {
+      const result = await api.generateVideo(objectiveId, topicId, {
+        draft_text: draft.text,
+        topic_name: topicName,
+        motion_hint: videoHint,
+        voiceover,
+      });
+      setVideo({
+        url: result.video_url,
+        promptUsed: result.prompt_used,
+        script: result.voiceover_script ?? '',
+      });
+      setVideoProgress(100);
+    } catch (err) {
+      setVideoError(err instanceof Error ? err.message : 'Video generation failed');
+      setVideoProgress(0);
+    } finally {
+      setVideoGenerating(false);
+    }
+  };
+
   const loadingLabel = image && !imageLoaded ? 'Loading generated image…' : 'Creating image…';
 
   return (
-    <div className="mt-4 border-t border-slate-100 pt-4">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <h5 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-          Image for this draft
-        </h5>
-        {!image && (
-          <button
-            type="button"
-            onClick={() => setShowPromptArea(!showPromptArea)}
-            className="text-xs text-slate-500 hover:text-brand-600"
-          >
-            {showPromptArea ? 'Hide prompt options' : 'Customize prompt'}
-          </button>
-        )}
-      </div>
-
-      {!imageGenerationReady && (
-        <p className="mb-3 text-xs text-amber-700">
-          Generates a designed LinkedIn slide — headline text, stats, charts, or flat illustrations.
-          Not AI photos.
-        </p>
-      )}
-
-      {showPromptArea && !image && (
-        <div className="mb-3">
-          <label className="mb-1 block text-xs font-medium text-slate-600">
-            Visual direction (optional)
-          </label>
-          <textarea
-            value={promptHint}
-            onChange={(e) => setPromptHint(e.target.value)}
-            placeholder="e.g. bar chart of 8x vs 4x EBITDA, stat slide with 60-80%, headline only…"
-            rows={2}
-            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 placeholder:text-slate-400 focus:border-brand-400 focus:outline-none focus:ring-1 focus:ring-brand-400"
-          />
-          <p className="mt-1 text-xs text-slate-400">
-            Creates a designed LinkedIn graphic tied to this post — chart, stat slide, headline, or
-            flat illustration. Click again for a different format.
-          </p>
+    <div className="mt-4 space-y-6">
+      {/* ============================ IMAGE ============================ */}
+      <div className="border-t border-slate-100 pt-4">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h5 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Image for this draft
+          </h5>
+          {!image && (
+            <button
+              type="button"
+              onClick={() => setShowPromptArea(!showPromptArea)}
+              className="text-xs text-slate-500 hover:text-brand-600"
+            >
+              {showPromptArea ? 'Hide prompt options' : 'Customize prompt'}
+            </button>
+          )}
         </div>
-      )}
 
-      {!image ? (
-        generating ? (
-          <div className="rounded-xl border border-brand-100 bg-brand-50/60 p-4">
-            <div className="mb-2 flex items-center justify-between text-sm">
-              <span className="font-semibold text-brand-900">{loadingLabel}</span>
-              <span className="font-mono text-xs text-brand-700">{progress}%</span>
-            </div>
-            <div className="h-2 overflow-hidden rounded-full bg-white">
-              <div
-                className="h-full rounded-full bg-brand-600 transition-all duration-500"
-                style={{ width: `${progress}%` }}
-              />
-            </div>
-            <p className="mt-2 text-xs text-brand-700">
-              Usually takes 20-60 seconds. The image will appear here automatically.
-            </p>
-          </div>
-        ) : (
-          <button
-            type="button"
-            onClick={() => generate('new')}
-            disabled={generating || !imageGenerationReady}
-            className="btn-primary text-sm disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            Generate image from this draft
-          </button>
-        )
-      ) : (
-        <div className="space-y-4">
-          <div className="relative overflow-hidden rounded-lg border border-slate-200 bg-slate-100">
-            {!imageLoaded && (
-              <div className="absolute inset-0 z-10 flex flex-col justify-center bg-white/90 p-4">
-                <div className="mb-2 flex items-center justify-between text-sm">
-                  <span className="font-semibold text-slate-800">{loadingLabel}</span>
-                  <span className="font-mono text-xs text-slate-500">{progress}%</span>
-                </div>
-                <div className="h-2 overflow-hidden rounded-full bg-slate-200">
-                  <div
-                    className="h-full rounded-full bg-brand-600 transition-all duration-500"
-                    style={{ width: `${progress}%` }}
-                  />
-                </div>
-              </div>
-            )}
-            <img
-              src={image.url}
-              alt="Generated LinkedIn post visual"
-              onLoad={() => {
-                setImageLoaded(true);
-                setProgress(100);
-              }}
-              onError={() => {
-                setImageLoaded(true);
-                setError('Image was generated, but the browser could not load it. Try Generate new image.');
-              }}
-              className={`w-full object-cover transition-opacity duration-300 ${
-                imageLoaded ? 'opacity-100' : 'opacity-0'
-              }`}
-            />
-          </div>
+        {!imageGenerationReady && (
+          <p className="mb-3 text-xs text-amber-700">
+            Generates a designed LinkedIn slide — headline text, stats, charts, or flat illustrations.
+            Not AI photos.
+          </p>
+        )}
 
-          <details className="text-xs text-slate-500">
-            <summary className="cursor-pointer font-medium text-slate-600">Prompt used</summary>
-            <p className="mt-2 whitespace-pre-wrap rounded bg-slate-50 p-3 text-slate-600">
-              {image.promptUsed}
-            </p>
-          </details>
-
-          <div>
+        {showPromptArea && !image && (
+          <div className="mb-3">
             <label className="mb-1 block text-xs font-medium text-slate-600">
-              Refine this image
+              Visual direction (optional)
             </label>
             <textarea
-              value={editInstruction}
-              onChange={(e) => setEditInstruction(e.target.value)}
-              placeholder="e.g. bigger headline text, add a simple chart, more minimal flat style…"
+              value={promptHint}
+              onChange={(e) => setPromptHint(e.target.value)}
+              placeholder="e.g. bar chart of 8x vs 4x EBITDA, stat slide with 60-80%, headline only…"
               rows={2}
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 placeholder:text-slate-400 focus:border-brand-400 focus:outline-none focus:ring-1 focus:ring-brand-400"
             />
+            <p className="mt-1 text-xs text-slate-400">
+              Creates a designed LinkedIn graphic tied to this post — chart, stat slide, headline, or
+              flat illustration. Click again for a different format.
+            </p>
           </div>
+        )}
 
-          <div className="flex flex-wrap gap-2">
+        {!image ? (
+          generating ? (
+            <div className="rounded-xl border border-brand-100 bg-brand-50/60 p-4">
+              <div className="mb-2 flex items-center justify-between text-sm">
+                <span className="font-semibold text-brand-900">{loadingLabel}</span>
+                <span className="font-mono text-xs text-brand-700">{progress}%</span>
+              </div>
+              <div className="h-2 overflow-hidden rounded-full bg-white">
+                <div
+                  className="h-full rounded-full bg-brand-600 transition-all duration-500"
+                  style={{ width: `${progress}%` }}
+                />
+              </div>
+              <p className="mt-2 text-xs text-brand-700">
+                Usually takes 20-60 seconds. The image will appear here automatically.
+              </p>
+            </div>
+          ) : (
             <button
               type="button"
-              onClick={() => generate('edit')}
-              disabled={generating || !editInstruction.trim()}
-              className="btn-secondary text-sm disabled:opacity-50"
+              onClick={() => generate('new')}
+              disabled={generating || !imageGenerationReady}
+              className="btn-primary text-sm disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {generating ? 'Refining…' : 'Apply changes'}
+              Generate image from this draft
             </button>
-            <button
-              type="button"
-              onClick={() => {
-                setImage(null);
-                setImageLoaded(false);
-                setEditInstruction('');
-                setShowPromptArea(true);
-                void generate('new');
-              }}
-              disabled={generating}
-              className="btn-secondary text-sm"
-            >
-              {generating ? 'Generating…' : 'Generate new image'}
-            </button>
-            <a
-              href={image.url}
-              download
-              className="btn-secondary text-sm no-underline"
-            >
-              Download
-            </a>
-          </div>
-        </div>
-      )}
+          )
+        ) : (
+          <div className="space-y-4">
+            <div className="relative overflow-hidden rounded-lg border border-slate-200 bg-slate-100">
+              {!imageLoaded && (
+                <div className="absolute inset-0 z-10 flex flex-col justify-center bg-white/90 p-4">
+                  <div className="mb-2 flex items-center justify-between text-sm">
+                    <span className="font-semibold text-slate-800">{loadingLabel}</span>
+                    <span className="font-mono text-xs text-slate-500">{progress}%</span>
+                  </div>
+                  <div className="h-2 overflow-hidden rounded-full bg-slate-200">
+                    <div
+                      className="h-full rounded-full bg-brand-600 transition-all duration-500"
+                      style={{ width: `${progress}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+              <img
+                src={image.url}
+                alt="Generated LinkedIn post visual"
+                onLoad={() => {
+                  setImageLoaded(true);
+                  setProgress(100);
+                }}
+                onError={() => {
+                  setImageLoaded(true);
+                  setError('Image was generated, but the browser could not load it. Try Generate new image.');
+                }}
+                className={`w-full object-cover transition-opacity duration-300 ${
+                  imageLoaded ? 'opacity-100' : 'opacity-0'
+                }`}
+              />
+            </div>
 
-      {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
+            <details className="text-xs text-slate-500">
+              <summary className="cursor-pointer font-medium text-slate-600">Prompt used</summary>
+              <p className="mt-2 whitespace-pre-wrap rounded bg-slate-50 p-3 text-slate-600">
+                {image.promptUsed}
+              </p>
+            </details>
+
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600">
+                Refine this image
+              </label>
+              <textarea
+                value={editInstruction}
+                onChange={(e) => setEditInstruction(e.target.value)}
+                placeholder="e.g. bigger headline text, add a simple chart, more minimal flat style…"
+                rows={2}
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 placeholder:text-slate-400 focus:border-brand-400 focus:outline-none focus:ring-1 focus:ring-brand-400"
+              />
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => generate('edit')}
+                disabled={generating || !editInstruction.trim()}
+                className="btn-secondary text-sm disabled:opacity-50"
+              >
+                {generating ? 'Refining…' : 'Apply changes'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setImage(null);
+                  setImageLoaded(false);
+                  setEditInstruction('');
+                  setShowPromptArea(true);
+                  void generate('new');
+                }}
+                disabled={generating}
+                className="btn-secondary text-sm"
+              >
+                {generating ? 'Generating…' : 'Generate new image'}
+              </button>
+              <a href={image.url} download className="btn-secondary text-sm no-underline">
+                Download
+              </a>
+            </div>
+          </div>
+        )}
+
+        {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
+      </div>
+
+      {/* ============================ VIDEO (text-to-video) ============================ */}
+      <div className="border-t border-slate-100 pt-4">
+        <h5 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+          Video for this draft
+        </h5>
+
+        {!videoGenerationReady ? (
+          <p className="text-xs text-amber-700">
+            Add <span className="font-mono">OPENAI_API_KEY</span> (with Sora access) to backend/.env to
+            generate a short LinkedIn video from this draft (OpenAI Sora).
+          </p>
+        ) : !video ? (
+          videoGenerating ? (
+            <div className="rounded-xl border border-brand-100 bg-brand-50/60 p-4">
+              <div className="mb-2 flex items-center justify-between text-sm">
+                <span className="font-semibold text-brand-900">Creating video…</span>
+                <span className="font-mono text-xs text-brand-700">{videoProgress}%</span>
+              </div>
+              <div className="h-2 overflow-hidden rounded-full bg-white">
+                <div
+                  className="h-full rounded-full bg-brand-600 transition-all duration-500"
+                  style={{ width: `${videoProgress}%` }}
+                />
+              </div>
+              <p className="mt-2 text-xs text-brand-700">
+                A 20s clip with voice-over takes ~2–5 minutes (two Sora clips + narration).
+                The video will appear here automatically.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <p className="text-xs text-slate-400">
+                Generates a ~20s video from this post's content (OpenAI Sora), with an optional
+                AI voice-over scripted from the same draft.
+              </p>
+              <textarea
+                value={videoHint}
+                onChange={(e) => setVideoHint(e.target.value)}
+                placeholder="Visual direction (optional) — e.g. clean motion graphics, office b-roll, data flowing…"
+                rows={2}
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 placeholder:text-slate-400 focus:border-brand-400 focus:outline-none focus:ring-1 focus:ring-brand-400"
+              />
+              <label className="flex items-center gap-2 text-xs text-slate-600">
+                <input
+                  type="checkbox"
+                  checked={voiceover}
+                  onChange={(e) => setVoiceover(e.target.checked)}
+                  className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-400"
+                />
+                Add AI voice-over (script written from this post)
+              </label>
+              <button
+                type="button"
+                onClick={generateVideo}
+                disabled={videoGenerating}
+                className="btn-primary text-sm disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Generate video from this draft
+              </button>
+            </div>
+          )
+        ) : (
+          <div className="space-y-3">
+            <video
+              src={video.url}
+              controls
+              loop
+              playsInline
+              className="w-full rounded-lg border border-slate-200 bg-black"
+            />
+            {video.script && (
+              <details className="text-xs text-slate-500" open>
+                <summary className="cursor-pointer font-medium text-slate-600">Voice-over script</summary>
+                <p className="mt-2 whitespace-pre-wrap rounded bg-slate-50 p-3 text-slate-600">
+                  {video.script}
+                </p>
+              </details>
+            )}
+            <details className="text-xs text-slate-500">
+              <summary className="cursor-pointer font-medium text-slate-600">Video prompt used</summary>
+              <p className="mt-2 whitespace-pre-wrap rounded bg-slate-50 p-3 text-slate-600">
+                {video.promptUsed}
+              </p>
+            </details>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={generateVideo}
+                disabled={videoGenerating}
+                className="btn-secondary text-sm disabled:opacity-50"
+              >
+                {videoGenerating ? 'Generating…' : 'Regenerate video'}
+              </button>
+              <a href={video.url} download className="btn-secondary text-sm no-underline">
+                Download video
+              </a>
+            </div>
+          </div>
+        )}
+
+        {videoError && <p className="mt-2 text-xs text-red-600">{videoError}</p>}
+      </div>
     </div>
   );
 }
