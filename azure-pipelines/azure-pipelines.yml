@@ -112,7 +112,7 @@ stages:
                     appType: webAppLinux
                     appName: '$(apiWebAppName)'
                     package: '$(Pipeline.Workspace)/backend/backend.zip'
-                    startUpCommand: 'bash startup.sh'
+                    startUpCommand: 'apt-get update && apt-get install -y ffmpeg && bash startup.sh'
 
       - deployment: DeployFrontend
         displayName: Deploy Web
