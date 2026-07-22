@@ -87,19 +87,6 @@ def _plan_segments(target_seconds: int) -> tuple[int, Optional[int]]:
 
 
 def _ffbin(name: str) -> Optional[str]:
-    # Prefer the ffmpeg binary bundled in the imageio-ffmpeg wheel, so video works
-    # everywhere via `pip install` alone — no system/manual ffmpeg install needed
-    # (e.g. on Azure App Service, which has no ffmpeg in its Python container).
-    if name == "ffmpeg":
-        try:
-            import imageio_ffmpeg
-
-            exe = imageio_ffmpeg.get_ffmpeg_exe()
-            if exe and os.path.isfile(exe):
-                return exe
-        except Exception:
-            pass
-    # Fall back to a system binary on PATH.
     return shutil.which(name)
 
 
