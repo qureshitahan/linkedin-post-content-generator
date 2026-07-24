@@ -129,9 +129,11 @@ class Settings(BaseSettings):
     # Output resolution. Must be one of Sora's allowed sizes:
     # 720x1280, 1280x720 (landscape 16:9), 1024x1792, 1792x1024.
     openai_video_size: str = "1280x720"
-    # Target total length in seconds. A single Sora clip maxes at 12s, so longer
-    # targets are produced with one native extend() (e.g. 20 = 12 + 8).
-    openai_video_seconds: int = 20
+    # Target total length in seconds. A single Sora clip maxes at 12s — keeping the
+    # target at 12 means ONE Sora call and no stitching (fastest, simplest). Values
+    # over 12 render two clips in parallel and concatenate (e.g. 20 = 12 + 8).
+    # NOTE: the Azure App Service env var OPENAI_VIDEO_SECONDS overrides this default.
+    openai_video_seconds: int = 12
     # Max seconds to wait for a Sora job before giving up.
     video_poll_timeout_seconds: int = 600
     video_poll_interval_seconds: int = 3
