@@ -18,6 +18,7 @@ import os
 import shutil
 import subprocess
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
 from pathlib import Path
 from typing import Optional
@@ -106,23 +107,6 @@ def _ffbin(name: str) -> Optional[str]:
         except Exception as e:  # pragma: no cover - defensive
             logger.warning(f"imageio-ffmpeg unavailable, no ffmpeg found: {e}")
     return None
-
-
-def _extract_last_frame(video_path: Path, out_png: Path) -> bool:
-    """Grab the final frame of a clip as a PNG (used to seed the continuation clip)."""
-    ffmpeg = _ffbin("ffmpeg")
-    if not ffmpeg:
-        return False
-    try:
-        r = subprocess.run(
-            [ffmpeg, "-y", "-sseof", "-0.2", "-i", str(video_path),
-             "-frames:v", "1", "-q:v", "2", str(out_png)],
-            capture_output=True, text=True, timeout=60,
-        )
-        return r.returncode == 0 and out_png.is_file()
-    except (subprocess.SubprocessError, OSError) as e:
-        logger.warning(f"last-frame extraction failed: {e}")
-        return False
 
 
 def _concat(seg_a: Path, seg_b: Path, out: Path) -> bool:
@@ -306,36 +290,62 @@ Return ONLY the spoken words."""
             return fallback
 
     def _synthesize_voiceover(self, client, script: str, out_path: Path) -> bool:
-        """Text-to-speech via OpenAI. Returns True if the audio file was written."""
+        """Text-to-speech via OpenAI. Returns True if the audio file was written.
+
+        This is what makes the video FOLLOW the on-screen voice-over script: the mux
+        step replaces Sora's own generated audio with this narration. If it fails, the
+        clip keeps Sora's invented audio (which won't match the script), so we try the
+        configured model first and then broadly available fallbacks — `tts-1` works on
+        virtually every account — and log loudly if none succeed.
+        """
         if not script.strip():
             return False
-        kwargs = dict(
-            model=settings.openai_tts_model,
-            voice=settings.openai_tts_voice,
-            input=script,
-            response_format=settings.openai_tts_format or "mp3",
-        )
-        if settings.openai_tts_model.startswith("gpt-4o"):
-            kwargs["instructions"] = (
-                "Speak in a confident, warm, professional LinkedIn thought-leader voice. "
-                "Clear and measured pace, natural phrasing."
+        primary = settings.openai_tts_model or "gpt-4o-mini-tts"
+        # Ordered, de-duplicated fallback chain.
+        candidates = list(dict.fromkeys([primary, "gpt-4o-mini-tts", "tts-1"]))
+        fmt = settings.openai_tts_format or "mp3"
+        last_err: Optional[Exception] = None
+
+        for model in candidates:
+            kwargs = dict(
+                model=model,
+                voice=settings.openai_tts_voice,
+                input=script,
+                response_format=fmt,
             )
-        try:
-            resp = client.audio.speech.create(**kwargs)
-            resp.write_to_file(str(out_path))
-            return out_path.is_file()
-        except TypeError:
-            kwargs.pop("instructions", None)
-            try:
-                resp = client.audio.speech.create(**kwargs)
-                resp.write_to_file(str(out_path))
-                return out_path.is_file()
-            except Exception as e:
-                logger.warning(f"TTS failed: {e}")
-                return False
-        except Exception as e:
-            logger.warning(f"TTS failed: {e}")
-            return False
+            if model.startswith("gpt-4o"):
+                kwargs["instructions"] = (
+                    "Speak in a confident, warm, professional LinkedIn thought-leader voice. "
+                    "Clear and measured pace, natural phrasing."
+                )
+            for attempt in ("with_instructions", "without_instructions"):
+                if attempt == "without_instructions":
+                    if "instructions" not in kwargs:
+                        break  # nothing to strip; the first attempt already covered it
+                    kwargs.pop("instructions", None)  # older SDKs reject `instructions`
+                try:
+                    resp = client.audio.speech.create(**kwargs)
+                    resp.write_to_file(str(out_path))
+                    if out_path.is_file():
+                        if model != primary:
+                            logger.warning(
+                                "TTS model %r unavailable; used fallback %r.", primary, model
+                            )
+                        return True
+                    break
+                except TypeError:
+                    continue  # retry this model without `instructions`
+                except Exception as e:  # noqa: BLE001 - try the next model
+                    last_err = e
+                    logger.warning("TTS model %r failed: %s", model, e)
+                    break
+
+        logger.error(
+            "Voice-over synthesis failed for all TTS models %s — video will keep Sora's "
+            "own audio and will not match the script. Last error: %s",
+            candidates, last_err,
+        )
+        return False
 
     def _poll(self, client, video):
         """Block until a Sora job finishes; raise on failure/timeout."""
@@ -376,35 +386,44 @@ Return ONLY the spoken words."""
 
     def _build_base_video(
         self, client, size: str, video_prompt: str, target_seconds: int,
-        seg_a: Path, seg_b: Path, frame: Path, base_path: Path,
+        seg_a: Path, seg_b: Path, base_path: Path,
     ) -> None:
-        """Produce the (Sora-audio) video into base_path — one clip, or two stitched."""
+        """Produce the (Sora-audio) base video into base_path — one clip, or two stitched.
+
+        For targets over 12s both Sora clips are rendered CONCURRENTLY (each an
+        independent text-to-video from the same scene prompt) and then concatenated.
+        Running them in parallel roughly halves wall-clock versus the old approach,
+        where clip B (image-to-video, seeded from clip A's last frame) could only
+        start after clip A had finished. The continuous voice-over ties the two
+        clips together, so a plain cut between them reads fine.
+        """
         first_seconds, second_seconds = _plan_segments(target_seconds)
 
-        # 1. First clip: text-to-video from the draft-derived prompt.
-        self._create_and_download(client, video_prompt, size, first_seconds, seg_a)
-
-        # 2. Short target — no continuation needed.
+        # Short target — a single clip, no stitching needed.
         if not second_seconds:
+            self._create_and_download(client, video_prompt, size, first_seconds, seg_a)
             os.replace(seg_a, base_path)
             return
 
-        # 3. Continue: seed a second clip from clip A's last frame (image-to-video) for continuity.
-        try:
-            if not _extract_last_frame(seg_a, frame):
-                raise RuntimeError("ffmpeg could not extract the last frame")
-            cont_prompt = (
-                f"Continue this scene seamlessly with smooth, professional motion. {video_prompt}"
-            )[:1200]
-            self._create_and_download(
-                client, cont_prompt, size, second_seconds, seg_b, image_bytes=frame.read_bytes()
+        cont_prompt = (
+            f"Continue the same scene with fresh, smooth, professional motion. {video_prompt}"
+        )[:1200]
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            fut_a = pool.submit(
+                self._create_and_download, client, video_prompt, size, first_seconds, seg_a
             )
-        except Exception as e:
-            logger.warning(f"Second segment failed, using first clip only: {e}")
-            os.replace(seg_a, base_path)
-            return
+            fut_b = pool.submit(
+                self._create_and_download, client, cont_prompt, size, second_seconds, seg_b
+            )
+            fut_a.result()  # clip A is required — let its error propagate and fail the job
+            try:
+                fut_b.result()
+            except Exception as e:
+                logger.warning(f"Second segment failed, using first clip only: {e}")
+                os.replace(seg_a, base_path)
+                return
 
-        # 4. Stitch the two clips into one continuous video.
+        # Stitch the two clips into one video.
         if _concat(seg_a, seg_b, base_path):
             return
         logger.warning("Concat failed; using first clip only.")
@@ -417,7 +436,6 @@ Return ONLY the spoken words."""
         uid = uuid.uuid4().hex
         seg_a = VIDEOS_DIR / f"{uid}_a.mp4"
         seg_b = VIDEOS_DIR / f"{uid}_b.mp4"
-        frame = VIDEOS_DIR / f"{uid}_frame.png"
         base = VIDEOS_DIR / f"{uid}_base.mp4"
         voice = VIDEOS_DIR / f"{uid}_voice.{settings.openai_tts_format or 'mp3'}"
         final_name = f"{uid}.mp4"
@@ -425,7 +443,7 @@ Return ONLY the spoken words."""
 
         try:
             self._build_base_video(
-                client, size, video_prompt, target_seconds, seg_a, seg_b, frame, base
+                client, size, video_prompt, target_seconds, seg_a, seg_b, base
             )
 
             # Voice-over: synthesize the script and replace the audio track.
@@ -437,7 +455,7 @@ Return ONLY the spoken words."""
             os.replace(base, final_path)
             return final_name
         finally:
-            self._cleanup(seg_a, seg_b, frame, base, voice)
+            self._cleanup(seg_a, seg_b, base, voice)
 
     @staticmethod
     def _cleanup(*paths: Path) -> None:
