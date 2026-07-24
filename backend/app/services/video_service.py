@@ -15,6 +15,7 @@ Uses the SAME OPENAI_API_KEY as image generation — just ensure the account has
 import asyncio
 import logging
 import os
+import re
 import shutil
 import subprocess
 import uuid
@@ -147,19 +148,53 @@ def _concat(seg_a: Path, seg_b: Path, out: Path) -> bool:
             pass
 
 
+def _media_duration(path: Path) -> Optional[float]:
+    """Best-effort media duration (seconds), parsed from ffmpeg's own stderr banner.
+
+    Avoids depending on ffprobe, which imageio-ffmpeg does NOT bundle (only ffmpeg).
+    """
+    ffmpeg = _ffbin("ffmpeg")
+    if not ffmpeg:
+        return None
+    try:
+        r = subprocess.run([ffmpeg, "-i", str(path)], capture_output=True, text=True, timeout=30)
+    except (subprocess.SubprocessError, OSError):
+        return None
+    m = re.search(r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)", r.stderr)
+    if not m:
+        return None
+    h, mn, s = m.groups()
+    return int(h) * 3600 + int(mn) * 60 + float(s)
+
+
 def _mux_voiceover(video_path: Path, voice_path: Path, out_path: Path) -> bool:
-    """Replace the video's audio with the voice-over, padded/capped to the video length."""
+    """Replace the video's (Sora-generated) audio with the voice-over narration.
+
+    The voice is padded with trailing silence (apad) so shorter narration still spans
+    the whole clip, and the output is HARD-CAPPED to the video's duration with `-t`.
+    That cap is essential: `apad` emits an INFINITE audio stream, and combining it with
+    `-shortest` fails to terminate on some ffmpeg builds — the process hangs until it is
+    killed, after which the clip is left with Sora's own audio (so it won't match the
+    on-screen script). Capping with `-t` sidesteps the hang entirely.
+    """
     ffmpeg = _ffbin("ffmpeg")
     if not ffmpeg:
         return False
+    duration = _media_duration(video_path)
+    if duration and duration > 0:
+        # Keep the full video length; pad the voice with silence to fill it.
+        args = [ffmpeg, "-y", "-i", str(video_path), "-i", str(voice_path),
+                "-filter_complex", "[1:a]apad[a]",
+                "-map", "0:v:0", "-map", "[a]",
+                "-c:v", "copy", "-c:a", "aac", "-t", f"{duration:.3f}", str(out_path)]
+    else:
+        # Duration unknown: skip apad (no infinite stream) so it still can't hang.
+        # May trim the video to the narration length, which is an acceptable fallback.
+        args = [ffmpeg, "-y", "-i", str(video_path), "-i", str(voice_path),
+                "-map", "0:v:0", "-map", "1:a:0",
+                "-c:v", "copy", "-c:a", "aac", "-shortest", str(out_path)]
     try:
-        r = subprocess.run(
-            [ffmpeg, "-y", "-i", str(video_path), "-i", str(voice_path),
-             "-filter_complex", "[1:a]apad[a]",
-             "-map", "0:v:0", "-map", "[a]",
-             "-c:v", "copy", "-c:a", "aac", "-shortest", str(out_path)],
-            capture_output=True, text=True, timeout=180,
-        )
+        r = subprocess.run(args, capture_output=True, text=True, timeout=180)
         if r.returncode == 0 and out_path.is_file():
             return True
         logger.warning("voiceover mux failed: %s", r.stderr[-500:])
