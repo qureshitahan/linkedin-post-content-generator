@@ -134,7 +134,7 @@ class Settings(BaseSettings):
     openai_video_seconds: int = 20
     # Max seconds to wait for a Sora job before giving up.
     video_poll_timeout_seconds: int = 600
-    video_poll_interval_seconds: int = 5
+    video_poll_interval_seconds: int = 3
 
     # --- Voice-over (OpenAI TTS — Claude writes the script, aligned to the post) ---
     # Adds a spoken narration track to the video. Uses the same OPENAI_API_KEY.
