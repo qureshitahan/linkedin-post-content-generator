@@ -87,7 +87,25 @@ def _plan_segments(target_seconds: int) -> tuple[int, Optional[int]]:
 
 
 def _ffbin(name: str) -> Optional[str]:
-    return shutil.which(name)
+    """Locate an ffmpeg/ffprobe binary.
+
+    Prefer one on PATH (local dev, or a system install); otherwise fall back to the
+    static ffmpeg binary bundled in the `imageio-ffmpeg` pip wheel. That fallback is
+    what makes video stitching / voice-over work on Azure App Service without Docker
+    or apt — no system ffmpeg is present there. Only `ffmpeg` is bundled (not
+    `ffprobe`), which is fine: this module never invokes `ffprobe`.
+    """
+    found = shutil.which(name)
+    if found:
+        return found
+    if name == "ffmpeg":
+        try:
+            import imageio_ffmpeg
+
+            return imageio_ffmpeg.get_ffmpeg_exe()
+        except Exception as e:  # pragma: no cover - defensive
+            logger.warning(f"imageio-ffmpeg unavailable, no ffmpeg found: {e}")
+    return None
 
 
 def _extract_last_frame(video_path: Path, out_png: Path) -> bool:
