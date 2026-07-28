@@ -55,6 +55,7 @@ Build the scene with (whatever fits the topic):
 - Cohesive, professional color grading and lighting; a modern, premium aesthetic
 
 Keep it credible and on-brand for B2B:
+- If the brief specifies a MAIN ON-SCREEN CHARACTER, the human shown MUST match that exact description (same gender, age, and look) — never substitute a different person or gender
 - Realistic, professional people and settings — natural faces and motion, no cartoonish, uncanny, or caricatured characters
 - Tell the story through VISUALS — do NOT rely on readable on-screen text, numbers, or charts (the model renders text as gibberish); keep any UI/signage abstract
 - No logos, brand names, watermarks, or captions
@@ -257,8 +258,10 @@ class VideoService:
     ) -> str:
         """Write a text-to-video scene prompt from the draft (like the image prompt)."""
         hook = _draft_hook(draft_text)
+        presenter = (settings.video_presenter or "").strip()
+        subject = presenter or "a focused professional"
         fallback = (
-            "Cinematic, professional scene: a focused professional in a sleek modern office at "
+            f"Cinematic, professional scene: {subject} in a sleek modern office at "
             "golden hour, working at a glowing screen as translucent holographic UI and data "
             "gently animate in the air around them. Slow cinematic push-in with shallow depth of "
             "field, warm volumetric light, premium color grading. "
@@ -271,6 +274,11 @@ class VideoService:
 
         topic_block = f"\nTopic: {topic_name}" if topic_name else ""
         hint_block = f"\nUser's visual preference: {hint}" if hint.strip() else ""
+        presenter_block = (
+            f"\n\nMAIN ON-SCREEN CHARACTER — whenever a human appears, it MUST be this exact "
+            f"person (same gender, age and look; never a woman or a different man): {presenter}."
+            if presenter else ""
+        )
         prompt = f"""Design ONE vivid, premium, cinematic text-to-video scene that brings this LinkedIn post to life.
 {topic_block}
 
@@ -279,7 +287,7 @@ POST:
 
 Give it a relevant main subject or character, a real environment, meaningful objects, and clear cinematic
 animation/camera motion — represent the post's message through what happens on screen. Keep it professional
-and realistic. Do NOT put readable text, numbers, or charts in the video.{hint_block}"""
+and realistic. Do NOT put readable text, numbers, or charts in the video.{hint_block}{presenter_block}"""
         try:
             result = claude_service.complete(
                 prompt=prompt,
