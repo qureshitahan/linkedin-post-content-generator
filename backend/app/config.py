@@ -137,6 +137,15 @@ class Settings(BaseSettings):
     # Max seconds to wait for a Sora job before giving up.
     video_poll_timeout_seconds: int = 600
     video_poll_interval_seconds: int = 3
+    # On-screen presenter description. Sora's API rejects real human-face reference
+    # images, so we can't inject an exact face — instead we DESCRIBE the presenter so
+    # the generated main character is consistent and correct (e.g. male, matching
+    # Dalbir) rather than a random person. Blank = let Sora choose freely.
+    video_presenter: str = (
+        "a distinguished South Asian man in his early fifties, clean-shaven with short "
+        "salt-and-pepper hair and round tortoiseshell glasses, wearing a tailored navy "
+        "blazer over a dark shirt — warm, confident, and professional"
+    )
 
     # --- Voice-over (OpenAI TTS — Claude writes the script, aligned to the post) ---
     # Adds a spoken narration track to the video. Uses the same OPENAI_API_KEY.
@@ -144,6 +153,16 @@ class Settings(BaseSettings):
     openai_tts_model: str = "gpt-4o-mini-tts"  # supports tone `instructions`
     openai_tts_voice: str = "alloy"  # alloy|echo|fable|onyx|nova|shimmer|...
     openai_tts_format: str = "mp3"
+
+    # --- Voice cloning (ElevenLabs — narrate in a specific person's cloned voice) ---
+    # PURELY ADDITIVE: when BOTH a key and a voice id are set, the narration is spoken
+    # in that cloned voice (e.g. Dalbir); otherwise the OpenAI TTS above is used exactly
+    # as before. Leave blank to keep the existing behavior. ElevenLabs failures fall
+    # back to OpenAI TTS automatically, so voice-over never silently disappears.
+    elevenlabs_api_key: str = ""
+    elevenlabs_voice_id: str = ""
+    elevenlabs_model: str = "eleven_multilingual_v2"
+    elevenlabs_output_format: str = "mp3_44100_128"
 
     @property
     def cors_origin_list(self) -> List[str]:

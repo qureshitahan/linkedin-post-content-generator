@@ -55,6 +55,7 @@ Build the scene with (whatever fits the topic):
 - Cohesive, professional color grading and lighting; a modern, premium aesthetic
 
 Keep it credible and on-brand for B2B:
+- If the brief specifies a MAIN ON-SCREEN CHARACTER, the human shown MUST match that exact description (same gender, age, and look) — never substitute a different person or gender
 - Realistic, professional people and settings — natural faces and motion, no cartoonish, uncanny, or caricatured characters
 - Tell the story through VISUALS — do NOT rely on readable on-screen text, numbers, or charts (the model renders text as gibberish); keep any UI/signage abstract
 - No logos, brand names, watermarks, or captions
@@ -257,8 +258,10 @@ class VideoService:
     ) -> str:
         """Write a text-to-video scene prompt from the draft (like the image prompt)."""
         hook = _draft_hook(draft_text)
+        presenter = (settings.video_presenter or "").strip()
+        subject = presenter or "a focused professional"
         fallback = (
-            "Cinematic, professional scene: a focused professional in a sleek modern office at "
+            f"Cinematic, professional scene: {subject} in a sleek modern office at "
             "golden hour, working at a glowing screen as translucent holographic UI and data "
             "gently animate in the air around them. Slow cinematic push-in with shallow depth of "
             "field, warm volumetric light, premium color grading. "
@@ -271,6 +274,11 @@ class VideoService:
 
         topic_block = f"\nTopic: {topic_name}" if topic_name else ""
         hint_block = f"\nUser's visual preference: {hint}" if hint.strip() else ""
+        presenter_block = (
+            f"\n\nMAIN ON-SCREEN CHARACTER — whenever a human appears, it MUST be this exact "
+            f"person (same gender, age and look; never a woman or a different man): {presenter}."
+            if presenter else ""
+        )
         prompt = f"""Design ONE vivid, premium, cinematic text-to-video scene that brings this LinkedIn post to life.
 {topic_block}
 
@@ -279,7 +287,7 @@ POST:
 
 Give it a relevant main subject or character, a real environment, meaningful objects, and clear cinematic
 animation/camera motion — represent the post's message through what happens on screen. Keep it professional
-and realistic. Do NOT put readable text, numbers, or charts in the video.{hint_block}"""
+and realistic. Do NOT put readable text, numbers, or charts in the video.{hint_block}{presenter_block}"""
         try:
             result = claude_service.complete(
                 prompt=prompt,
@@ -325,6 +333,50 @@ Return ONLY the spoken words."""
             return fallback
 
     def _synthesize_voiceover(self, client, script: str, out_path: Path) -> bool:
+        """Synthesize the narration audio that gets muxed onto the video.
+
+        Provider dispatch (PURELY ADDITIVE — existing behavior is preserved):
+        - If an ElevenLabs key + voice id are configured, narrate in that CLONED voice
+          (e.g. Dalbir). On ANY failure we fall back so narration still happens.
+        - Otherwise (or on ElevenLabs failure) use the OpenAI TTS path exactly as before.
+        """
+        if not script.strip():
+            return False
+        if settings.elevenlabs_api_key and settings.elevenlabs_voice_id:
+            if self._synthesize_voiceover_elevenlabs(script, out_path):
+                return True
+            logger.warning("ElevenLabs voice-over failed; falling back to OpenAI TTS.")
+        return self._synthesize_voiceover_openai(client, script, out_path)
+
+    def _synthesize_voiceover_elevenlabs(self, script: str, out_path: Path) -> bool:
+        """Narrate `script` in the configured ElevenLabs (cloned) voice → out_path.
+
+        Uses httpx (already a dependency) — no extra SDK. Returns True only if a
+        non-empty audio file was written; the caller falls back to OpenAI TTS on False.
+        """
+        import httpx
+
+        url = f"https://api.elevenlabs.io/v1/text-to-speech/{settings.elevenlabs_voice_id}"
+        headers = {"xi-api-key": settings.elevenlabs_api_key, "accept": "audio/mpeg"}
+        params = {"output_format": settings.elevenlabs_output_format or "mp3_44100_128"}
+        payload = {
+            "text": script,
+            "model_id": settings.elevenlabs_model or "eleven_multilingual_v2",
+            "voice_settings": {"stability": 0.5, "similarity_boost": 0.8},
+        }
+        try:
+            with httpx.Client(timeout=float(settings.video_poll_timeout_seconds)) as hc:
+                r = hc.post(url, params=params, json=payload, headers=headers)
+            if r.status_code != 200:
+                logger.warning("ElevenLabs TTS failed (%s): %s", r.status_code, r.text[:300])
+                return False
+            out_path.write_bytes(r.content)
+            return out_path.is_file() and out_path.stat().st_size > 0
+        except Exception as e:  # noqa: BLE001 - fall back to OpenAI TTS
+            logger.warning("ElevenLabs TTS error: %s", e)
+            return False
+
+    def _synthesize_voiceover_openai(self, client, script: str, out_path: Path) -> bool:
         """Text-to-speech via OpenAI. Returns True if the audio file was written.
 
         This is what makes the video FOLLOW the on-screen voice-over script: the mux
