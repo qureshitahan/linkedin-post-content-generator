@@ -145,6 +145,16 @@ class Settings(BaseSettings):
     openai_tts_voice: str = "alloy"  # alloy|echo|fable|onyx|nova|shimmer|...
     openai_tts_format: str = "mp3"
 
+    # --- Voice cloning (ElevenLabs — narrate in a specific person's cloned voice) ---
+    # PURELY ADDITIVE: when BOTH a key and a voice id are set, the narration is spoken
+    # in that cloned voice (e.g. Dalbir); otherwise the OpenAI TTS above is used exactly
+    # as before. Leave blank to keep the existing behavior. ElevenLabs failures fall
+    # back to OpenAI TTS automatically, so voice-over never silently disappears.
+    elevenlabs_api_key: str = ""
+    elevenlabs_voice_id: str = ""
+    elevenlabs_model: str = "eleven_multilingual_v2"
+    elevenlabs_output_format: str = "mp3_44100_128"
+
     @property
     def cors_origin_list(self) -> List[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]

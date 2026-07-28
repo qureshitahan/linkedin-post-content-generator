@@ -325,6 +325,50 @@ Return ONLY the spoken words."""
             return fallback
 
     def _synthesize_voiceover(self, client, script: str, out_path: Path) -> bool:
+        """Synthesize the narration audio that gets muxed onto the video.
+
+        Provider dispatch (PURELY ADDITIVE — existing behavior is preserved):
+        - If an ElevenLabs key + voice id are configured, narrate in that CLONED voice
+          (e.g. Dalbir). On ANY failure we fall back so narration still happens.
+        - Otherwise (or on ElevenLabs failure) use the OpenAI TTS path exactly as before.
+        """
+        if not script.strip():
+            return False
+        if settings.elevenlabs_api_key and settings.elevenlabs_voice_id:
+            if self._synthesize_voiceover_elevenlabs(script, out_path):
+                return True
+            logger.warning("ElevenLabs voice-over failed; falling back to OpenAI TTS.")
+        return self._synthesize_voiceover_openai(client, script, out_path)
+
+    def _synthesize_voiceover_elevenlabs(self, script: str, out_path: Path) -> bool:
+        """Narrate `script` in the configured ElevenLabs (cloned) voice → out_path.
+
+        Uses httpx (already a dependency) — no extra SDK. Returns True only if a
+        non-empty audio file was written; the caller falls back to OpenAI TTS on False.
+        """
+        import httpx
+
+        url = f"https://api.elevenlabs.io/v1/text-to-speech/{settings.elevenlabs_voice_id}"
+        headers = {"xi-api-key": settings.elevenlabs_api_key, "accept": "audio/mpeg"}
+        params = {"output_format": settings.elevenlabs_output_format or "mp3_44100_128"}
+        payload = {
+            "text": script,
+            "model_id": settings.elevenlabs_model or "eleven_multilingual_v2",
+            "voice_settings": {"stability": 0.5, "similarity_boost": 0.8},
+        }
+        try:
+            with httpx.Client(timeout=float(settings.video_poll_timeout_seconds)) as hc:
+                r = hc.post(url, params=params, json=payload, headers=headers)
+            if r.status_code != 200:
+                logger.warning("ElevenLabs TTS failed (%s): %s", r.status_code, r.text[:300])
+                return False
+            out_path.write_bytes(r.content)
+            return out_path.is_file() and out_path.stat().st_size > 0
+        except Exception as e:  # noqa: BLE001 - fall back to OpenAI TTS
+            logger.warning("ElevenLabs TTS error: %s", e)
+            return False
+
+    def _synthesize_voiceover_openai(self, client, script: str, out_path: Path) -> bool:
         """Text-to-speech via OpenAI. Returns True if the audio file was written.
 
         This is what makes the video FOLLOW the on-screen voice-over script: the mux
