@@ -22,6 +22,7 @@ interface VideoState {
   url: string;
   promptUsed: string;
   script: string;
+  filename: string;
 }
 
 export default function DraftImagePanel({
@@ -50,6 +51,22 @@ export default function DraftImagePanel({
   const [videoError, setVideoError] = useState<string | null>(null);
   const [videoHint, setVideoHint] = useState('');
   const [voiceover, setVoiceover] = useState(true);
+
+  // --- LinkedIn publishing (post caption + image/video to Dalbir's profile) ---
+  const [linkedInReady, setLinkedInReady] = useState(false);
+  const [postingImage, setPostingImage] = useState(false);
+  const [imagePostUrl, setImagePostUrl] = useState<string | null>(null);
+  const [imagePostError, setImagePostError] = useState<string | null>(null);
+  const [postingVideo, setPostingVideo] = useState(false);
+  const [videoPostUrl, setVideoPostUrl] = useState<string | null>(null);
+  const [videoPostError, setVideoPostError] = useState<string | null>(null);
+
+  useEffect(() => {
+    api
+      .linkedInStatus()
+      .then((s) => setLinkedInReady(s.configured))
+      .catch(() => setLinkedInReady(false));
+  }, []);
 
   useEffect(() => {
     if (!generating) {
@@ -141,6 +158,7 @@ export default function DraftImagePanel({
         url: result.video_url,
         promptUsed: result.prompt_used,
         script: result.voiceover_script ?? '',
+        filename: result.filename ?? '',
       });
       setVideoProgress(100);
     } catch (err) {
@@ -148,6 +166,44 @@ export default function DraftImagePanel({
       setVideoProgress(0);
     } finally {
       setVideoGenerating(false);
+    }
+  };
+
+  const postImageToLinkedIn = async () => {
+    if (!image) return;
+    setPostingImage(true);
+    setImagePostError(null);
+    setImagePostUrl(null);
+    try {
+      const res = await api.postToLinkedIn(objectiveId, topicId, {
+        caption: draft.text,
+        media_type: 'image',
+        filename: image.filename,
+      });
+      setImagePostUrl(res.post_url);
+    } catch (err) {
+      setImagePostError(err instanceof Error ? err.message : 'Failed to post to LinkedIn');
+    } finally {
+      setPostingImage(false);
+    }
+  };
+
+  const postVideoToLinkedIn = async () => {
+    if (!video) return;
+    setPostingVideo(true);
+    setVideoPostError(null);
+    setVideoPostUrl(null);
+    try {
+      const res = await api.postToLinkedIn(objectiveId, topicId, {
+        caption: draft.text,
+        media_type: 'video',
+        filename: video.filename,
+      });
+      setVideoPostUrl(res.post_url);
+    } catch (err) {
+      setVideoPostError(err instanceof Error ? err.message : 'Failed to post to LinkedIn');
+    } finally {
+      setPostingVideo(false);
     }
   };
 
@@ -305,7 +361,27 @@ export default function DraftImagePanel({
               <a href={image.url} download className="btn-secondary text-sm no-underline">
                 Download
               </a>
+              {linkedInReady && (
+                <button
+                  type="button"
+                  onClick={postImageToLinkedIn}
+                  disabled={postingImage || !imageLoaded}
+                  className="btn-primary text-sm disabled:opacity-50"
+                >
+                  {postingImage ? 'Posting to LinkedIn…' : 'Post to LinkedIn'}
+                </button>
+              )}
             </div>
+
+            {imagePostUrl && (
+              <p className="text-xs text-green-700">
+                Posted to LinkedIn.{' '}
+                <a href={imagePostUrl} target="_blank" rel="noreferrer" className="font-medium underline">
+                  View post
+                </a>
+              </p>
+            )}
+            {imagePostError && <p className="text-xs text-red-600">{imagePostError}</p>}
           </div>
         )}
 
@@ -408,7 +484,32 @@ export default function DraftImagePanel({
               <a href={video.url} download className="btn-secondary text-sm no-underline">
                 Download video
               </a>
+              {linkedInReady && (
+                <button
+                  type="button"
+                  onClick={postVideoToLinkedIn}
+                  disabled={postingVideo}
+                  className="btn-primary text-sm disabled:opacity-50"
+                >
+                  {postingVideo ? 'Posting to LinkedIn…' : 'Post to LinkedIn'}
+                </button>
+              )}
             </div>
+
+            {postingVideo && (
+              <p className="text-xs text-brand-700">
+                Uploading to LinkedIn and publishing — this can take up to a minute for video.
+              </p>
+            )}
+            {videoPostUrl && (
+              <p className="text-xs text-green-700">
+                Posted to LinkedIn.{' '}
+                <a href={videoPostUrl} target="_blank" rel="noreferrer" className="font-medium underline">
+                  View post
+                </a>
+              </p>
+            )}
+            {videoPostError && <p className="text-xs text-red-600">{videoPostError}</p>}
           </div>
         )}
 

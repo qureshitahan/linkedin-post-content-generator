@@ -17,6 +17,8 @@ from app.schemas import (
     GenerateImageRequest,
     GenerateImageResponse,
     GenerateVideoRequest,
+    LinkedInPostRequest,
+    LinkedInPostResponse,
     ObjectiveCreate,
     ObjectiveOut,
     TopicOut,
@@ -24,8 +26,9 @@ from app.schemas import (
     VideoJobStart,
     VideoJobStatus,
 )
-from app.services.image_service import image_service
-from app.services.video_service import video_service
+from app.services.image_service import IMAGES_DIR, image_service
+from app.services.linkedin_service import linkedin_service
+from app.services.video_service import VIDEOS_DIR, video_service
 from app.services.objective_parser import score_post_relevance
 from app.services.principle_context import build_parsed_objective
 from app.run_settings import RunSettings
@@ -419,6 +422,47 @@ async def get_video_job(objective_id: int, topic_id: int, job_id: str):
         voiceover_script=job.get("voiceover_script"),
         error=job.get("error"),
     )
+
+
+@router.get("/linkedin/status")
+async def linkedin_status():
+    """Whether LinkedIn publishing is configured (token + person URN present)."""
+    return {"configured": linkedin_service.is_configured}
+
+
+@router.post(
+    "/{objective_id}/topics/{topic_id}/post-to-linkedin",
+    response_model=LinkedInPostResponse,
+)
+async def post_to_linkedin(
+    objective_id: int,
+    topic_id: int,
+    payload: LinkedInPostRequest,
+    db: Session = Depends(get_db),
+):
+    """Publish an already-generated image or video (by filename) to LinkedIn with a caption."""
+    if not linkedin_service.is_configured:
+        raise HTTPException(
+            status_code=503,
+            detail="LinkedIn publishing is not configured. Set LINKEDIN_ACCESS_TOKEN and "
+            "LINKEDIN_PERSON_URN.",
+        )
+    filename = payload.filename
+    if ".." in filename or "/" in filename or "\\" in filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+
+    base_dir = IMAGES_DIR if payload.media_type == "image" else VIDEOS_DIR
+    path = base_dir / filename
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail=f"{payload.media_type} file not found")
+
+    poster = linkedin_service.post_image if payload.media_type == "image" else linkedin_service.post_video
+    try:
+        result = await asyncio.to_thread(poster, payload.caption, path)
+    except Exception as e:
+        logger.exception("LinkedIn post failed for topic %s", topic_id)
+        raise HTTPException(status_code=502, detail=f"LinkedIn post failed: {e}")
+    return LinkedInPostResponse(**result)
 
 
 @router.get("/trends/location", response_model=List[TrendItemOut])

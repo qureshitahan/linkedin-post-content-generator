@@ -164,6 +164,16 @@ class Settings(BaseSettings):
     elevenlabs_model: str = "eleven_multilingual_v2"
     elevenlabs_output_format: str = "mp3_44100_128"
 
+    # --- LinkedIn publishing (post caption + image/video to a member profile) ---
+    # Uses a member access token from LinkedIn OAuth done out-of-band (no in-app
+    # connect flow). The token lasts ~60 days; replace it when it expires. Publishing
+    # is OFF unless BOTH the token and the person URN are set.
+    linkedin_access_token: str = ""
+    linkedin_person_urn: str = ""          # author, e.g. urn:li:person:xxxx
+    linkedin_api_version: str = "202606"   # LinkedIn-Version header
+    linkedin_client_id: str = ""           # reserved for future token refresh
+    linkedin_client_secret: str = ""       # reserved for future token refresh
+
     @property
     def cors_origin_list(self) -> List[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
