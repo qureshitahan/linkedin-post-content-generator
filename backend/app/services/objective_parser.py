@@ -80,7 +80,15 @@ Indexed background from uploaded documents. When the topic connects naturally, w
 {snippets}
 """
 
-        return f"""AUTHOR (who is writing the post):
+        focus_block = ""
+        strategic_focus = (settings.content_focus or "").strip()
+        if strategic_focus:
+            focus_block = (
+                "STRATEGIC FOCUS (the lens for EVERY topic and draft — reject anything "
+                f"that does not serve it):\n{strategic_focus}\n\n"
+            )
+
+        return f"""{focus_block}AUTHOR (who is writing the post):
 {self.author_summary}
 
 CONTENT GOAL (what they want posts about):

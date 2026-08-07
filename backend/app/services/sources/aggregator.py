@@ -13,6 +13,7 @@ from app.run_settings import active_run_settings
 from app.services.sources.base import NormalizedPost
 from app.services.sources.arxiv_source import arxiv_source
 from app.services.sources.devto_source import devto_source
+from app.services.sources.github_source import github_source
 from app.services.sources.hackernews_source import hackernews_source
 from app.services.sources.news_source import news_source
 from app.services.sources.preprint_source import preprint_source
@@ -36,6 +37,7 @@ class SourceAggregator:
             "pubmed": pubmed_source,
             "preprint": preprint_source,
             "devto": devto_source,
+            "github": github_source,
             "x_research": x_research_source,
             "x": x_source,
         }
@@ -72,7 +74,7 @@ class SourceAggregator:
         tasks = []
         meta = []
 
-        query_agnostic = {"industry", "devto"}
+        query_agnostic = {"industry", "devto", "github"}
 
         for name in active:
             source = self._registry[name]

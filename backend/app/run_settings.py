@@ -20,6 +20,7 @@ ALL_SOURCES = (
     "pubmed",
     "preprint",
     "devto",
+    "github",
     "x_research",
     "x",
 )

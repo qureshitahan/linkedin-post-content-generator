@@ -35,28 +35,29 @@ OPENAI_PLACEHOLDERS = frozenset(
     }
 )
 
-LINKEDIN_IMAGE_SYSTEM = """You write image generation prompts for LinkedIn post cover images.
-Output ONLY the prompt text — no preamble, no markdown.
+LINKEDIN_IMAGE_SYSTEM = """You are an award-winning infographic art director. You write prompts for a PREMIUM LinkedIn post cover image rendered by an AI image model.
+Output ONLY the image prompt text — no preamble, no markdown.
 
-You are designing a LinkedIn post image — like a Canva slide, carousel cover, or clean chart.
-NOT a photorealistic stock photo. AI photos of people in hallways look fake and unprofessional.
+GOAL: a polished, modern INFOGRAPHIC — the kind a top B2B brand or a senior designer would publish. Clean, editorial, high production value. NOT a photorealistic stock photo, NOT clip-art, NOT a childish cartoon.
 
-What works on LinkedIn B2B/healthcare posts:
-- A clean bar or line chart that visualizes the post's key claim
-- A stat slide with one big number and short label
-- A headline slide with the hook in bold typography
-- A flat illustration of the concept (multi-site ops, district layer, consolidation)
-- A simple before/after or with-vs-without comparison graphic (flat design, not icon org charts)
+Design language (describe these concretely in the prompt):
+- Strong visual hierarchy on a clear grid; balanced composition; generous whitespace
+- Cohesive professional palette: deep navy, crisp white, one teal or electric-blue accent, soft grays
+- Subtle depth: soft shadows, gentle gradients, rounded cards/containers, crisp vector shapes
+- Modern geometric icons and simple data visuals (bars, arrows, rings, cards) that carry the meaning
+- Premium editorial typography; confident, corporate, trustworthy tone
 
-Rules:
-- The image must match the SPECIFIC visual concept provided — not a generic scene
-- Flat, designed, polished — credible LinkedIn creator aesthetic
-- NO photorealistic people, NO person from behind, NO walking down corridors, NO holding tablets
-- NO pharmacy/hospital stock photo scenes unless explicitly requested
-- NO org charts with icon nodes and connecting lines
-- NO random metaphors (sand, fog, bridges, surreal)
-- Text on image: only when the format requires it — spell exact short text in the prompt
-- Landscape 16:9, generous whitespace, professional palette (navy, white, teal, gray)"""
+TEXT ON THE IMAGE — the model is unreliable at text, so make it EASY to get right:
+- Include only SHORT text: at most a headline of <= 8 words, plus optionally ONE hero stat and up to 3 labels of 1-3 words each
+- Put every exact word in DOUBLE QUOTES so it is spelled correctly, and instruct crisp, legible, correctly-spelled sans-serif type
+- NEVER request paragraphs, sentences, body copy, captions, or fine print
+- If a concept needs explaining, show it with icons/shapes/layout, NOT sentences
+
+Hard rules:
+- Render the SPECIFIC concept provided — never a generic scene
+- NO photorealistic people, NO corridors/tablets/handshake stock clichés
+- NO org charts of icon nodes joined by lines; NO surreal metaphors (sand, fog, bridges, floating objects)
+- Landscape 16:9, high resolution, print-crisp, edge-to-edge polished layout"""
 
 ORG_CHART_PROMPT_TERMS = (
     "organizational chart",
@@ -108,8 +109,9 @@ VISUAL_FORMATS: dict[str, dict] = {
     "stat_slide": {
         "uses_text": True,
         "instruction": (
-            "Stat highlight slide — one large number or range as hero typography, "
-            "optional 3-5 word sublabel, clean solid or gradient background."
+            "Bold stat-highlight infographic — ONE large hero number or range as the focal point in "
+            "premium typography, a 2-4 word sublabel, a subtle supporting icon or progress ring, on a "
+            "clean gradient background with soft depth."
         ),
     },
     "text_slide": {
@@ -136,8 +138,9 @@ VISUAL_FORMATS: dict[str, dict] = {
     "simple_infographic": {
         "uses_text": True,
         "instruction": (
-            "Single-insight infographic slide — 3 steps or 3 facts from the post with icons and "
-            "short labels. Professional LinkedIn infographic, not a multi-tier hierarchy diagram."
+            "Premium single-insight infographic — up to 3 concise points shown as clean rounded cards "
+            "with distinct modern icons and 1-3 word labels, on a clear grid with strong hierarchy and "
+            "generous whitespace. High-end editorial look, not a multi-tier hierarchy diagram."
         ),
     },
 }
@@ -329,17 +332,32 @@ Return exactly:
         return _parse_visual_analysis("", draft_text)
 
 
+def _shorten_words(text: str, max_words: int) -> str:
+    words = re.sub(r"\s+", " ", (text or "").strip()).split(" ")
+    return " ".join(words[:max_words]).rstrip(" ,.;:")
+
+
 def _text_instruction(analysis: dict, fmt: str) -> str:
     meta = VISUAL_FORMATS[fmt]
     if not meta["uses_text"]:
-        return "Do NOT include text, words, or typography in the image."
+        return (
+            "Do NOT render any text, words, letters, or numbers in the image — "
+            "communicate entirely through design, icons, and layout."
+        )
     parts = []
     if fmt == "stat_slide" and analysis.get("stat_text"):
-        parts.append(f'Hero stat text: "{analysis["stat_text"]}"')
-    headline = analysis.get("headline_text") or analysis.get("hook", "")
+        parts.append(f'one hero stat "{analysis["stat_text"]}"')
+    headline = _shorten_words(analysis.get("headline_text") or analysis.get("hook", ""), 8)
     if headline:
-        parts.append(f'Headline text (max 10 words): "{headline[:80]}"')
-    return "Include on image: " + "; ".join(parts) if parts else "Do NOT include text, words, or typography in the image."
+        parts.append(f'a short headline "{headline}"')
+    if not parts:
+        return "Do NOT render any text in the image."
+    return (
+        "Render ONLY this text, spelled EXACTLY as written, in crisp legible sans-serif with "
+        "correct spelling and clean kerning: "
+        + "; ".join(parts)
+        + ". Do NOT add any other words, labels, sentences, numbers, or fine print anywhere."
+    )
 
 
 class ImageService:
@@ -414,10 +432,11 @@ DRAFT TEXT:
 {rejection_note}
 
 Instructions:
-- Execute the EXACT VISUAL concept above as a designed slide/chart/illustration
-- Flat designed graphic — NOT a photorealistic photo of a person
+- Execute the EXACT VISUAL concept above as a PREMIUM infographic-style graphic
+- Modern editorial design: clear grid, strong visual hierarchy, generous whitespace, deep-navy/white/teal palette, soft depth, rounded cards, crisp modern icons
+- A designed graphic — NOT a photorealistic photo of a person
 - Must directly support what this post is saying
-- Professional LinkedIn B2B aesthetic, landscape 16:9"""
+- High production value, print-crisp, landscape 16:9"""
 
                 try:
                     result = claude_service.complete(
@@ -501,9 +520,10 @@ Keep it professional and LinkedIn-native. Output ONLY the new prompt."""
         concept = info.get("visual_concept") or info.get("hook") or _draft_hook(draft_text)
         text_part = _text_instruction(info, fmt)
         base = (
-            f"Professional LinkedIn {fmt} graphic, flat designed slide — NOT a photograph. "
+            f"Premium LinkedIn {fmt} infographic — a polished, modern designed graphic, NOT a photograph. "
             f"{meta['instruction']} Visual: {concept}. {text_part} "
-            f"Navy and white palette, landscape 16:9, clean Canva-style layout."
+            f"Deep navy, white and teal palette, modern geometric icons, soft depth and rounded cards, "
+            f"clear grid, generous whitespace, high production value, landscape 16:9."
         )
         if user_hint.strip():
             base += f" {user_hint.strip()}"
