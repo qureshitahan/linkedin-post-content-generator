@@ -139,7 +139,7 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openai_image_model: str = "gpt-image-1"
     openai_image_size: str = "1536x1024"  # landscape, close to LinkedIn 1200x627
-    openai_image_quality: str = "high"  # low | medium | high | auto (high = best, ~$0.19/image)
+    openai_image_quality: str = "medium"  # low | medium | high | auto
     linkedin_drafts_count: int = 5
 
     # --- Video generation (OpenAI Sora — image-to-video, on demand) ---
