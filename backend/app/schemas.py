@@ -232,6 +232,18 @@ class VideoJobStatus(BaseModel):
     error: Optional[str] = None
 
 
+class LinkedInPostRequest(BaseModel):
+    # Publish an already-generated image or video (by filename) with a caption.
+    caption: str = Field(..., min_length=1, max_length=3000)
+    media_type: str = Field(..., pattern="^(image|video)$")
+    filename: str = Field(..., min_length=1, max_length=200)
+
+
+class LinkedInPostResponse(BaseModel):
+    post_url: str
+    post_urn: str
+
+
 class PrincipleDocumentOut(BaseModel):
     id: int
     filename: str

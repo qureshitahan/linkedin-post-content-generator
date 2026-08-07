@@ -189,4 +189,19 @@ export const api = {
     }
     throw new Error('Video generation timed out. Please try again.');
   },
+
+  linkedInStatus: async () => {
+    return request<{ configured: boolean }>(`/objectives/linkedin/status`);
+  },
+
+  postToLinkedIn: async (
+    objectiveId: number,
+    topicId: number,
+    body: { caption: string; media_type: 'image' | 'video'; filename: string },
+  ) => {
+    return request<{ post_url: string; post_urn: string }>(
+      `/objectives/${objectiveId}/topics/${topicId}/post-to-linkedin`,
+      { method: 'POST', body: JSON.stringify(body) },
+    );
+  },
 };
