@@ -371,17 +371,22 @@ Evidence:
 DRAFT STYLES (one draft per style listed):
 {_draft_styles_block(style_keys)}
 
-STRUCTURE per draft (no labels in output):
-1. HOOK (line 1, under 12 words)
-2. Blank line
-3. CONTEXT (1-2 sentences)
-4. INSIGHT (2-4 short lines)
-5. PROOF (optional, 1-2 sentences from real background only)
-6. TAKEAWAY (1 sentence)
-7. ENGAGEMENT QUESTION (last line)
-8. Reference line if URL exists: "Reference: <url>" — when evidence includes a research paper, cite the paper URL (arxiv/pubmed), NOT an unrelated viral X post.
+STRUCTURE per draft (no style labels in the output; put a BLANK LINE between EVERY section for clean, skimmable spacing):
+1. HOOK (line 1, under 12 words): scroll-stopping.
+2. CONTEXT (1-2 short sentences).
+3. INSIGHT (2-4 short lines, one idea per line).
+4. PROOF (optional, 1-2 sentences from the real evidence only).
+5. TAKEAWAY (1 crisp sentence).
+6. ENGAGEMENT QUESTION (1 line).
+7. HASHTAGS (final line of your text): 3-5 SPECIFIC hashtags tailored to THIS post — the domain, method, technology, or role (e.g. #DigitalHealth #ClinicalResearch #MedTech). Space-separated, PascalCase for multi-word tags, max 5, no generic filler like #motivation or #success.
 
-RULES: human practitioner voice, short paragraphs, no em dashes, no AI clichés ({", ".join(BANNED_DRAFT_PATTERNS[:5])}…), 130-200 words each.
+Do NOT write a "Reference:" line yourself — the source link is appended automatically at the very end, AFTER the hashtags.
+
+SEO: naturally weave the concrete terms a professional would search for this topic (technologies, methods, the domain, key roles) into the hook and body. Boost discoverability without keyword-stuffing or sounding robotic.
+
+FORMATTING: professional tone, short paragraphs, a blank line between every section above so it reads cleanly and skims well on mobile.
+
+RULES: human practitioner voice, no em dashes, no AI clichés ({", ".join(BANNED_DRAFT_PATTERNS[:5])}…), 140-220 words each (excluding hashtags and the reference).
 
 Return JSON:
 {{
@@ -460,22 +465,24 @@ SPECIFIC EVENT/FINDING: {specific_event}
 SUGGESTED ANGLE: {linkedin_angle}
 {ref_line}{prev_block}
 
-STRUCTURE (no labels in output):
+STRUCTURE (no labels in output; a BLANK LINE between EVERY section for clean spacing):
 1. HOOK (line 1, standalone, under 12 words): a fresh, scroll-stopping opener distinct from the previous draft.
-2. Blank line.
-3. CONTEXT: the specific event/finding, 1-2 short sentences.
-4. INSIGHT: the author's POV, 2-4 short lines, what most people miss.
-5. PROOF (optional): ONE real detail from their background. Never invent.
-6. TAKEAWAY: one crisp line.
-7. ENGAGEMENT QUESTION: a specific question on the last line.
-8. If a reference link exists, add it on its own final line as: "Reference: <url>"
+2. CONTEXT: the specific event/finding, 1-2 short sentences.
+3. INSIGHT: the author's POV, 2-4 short lines, what most people miss.
+4. PROOF (optional): ONE real detail from their background. Never invent.
+5. TAKEAWAY: one crisp line.
+6. ENGAGEMENT QUESTION: a specific question on its own line.
+7. HASHTAGS (final line): 3-5 SPECIFIC hashtags tailored to THIS post (domain, method, technology, role; e.g. #DigitalHealth #ClinicalResearch). PascalCase, space-separated, max 5, no generic filler.
+
+Do NOT write a "Reference:" line yourself. The source link is appended automatically at the very end, after the hashtags.
 
 RULES:
-- Sound like a sharp human practitioner. Short sentences, lots of white space.
+- Professional and SEO-friendly: weave in the concrete terms a professional would search for this topic (no keyword-stuffing).
+- Sound like a sharp human practitioner. Short sentences, generous white space (a blank line between sections).
 - NEVER use the em dash (—), en dash (–), or " - " as a connector. Use periods/commas.
 - Do NOT use these phrases: {", ".join(BANNED_DRAFT_PATTERNS)}
-- 0-2 hashtags max, 0-1 emoji max. No bullet lists. No hype.
-- 130-200 words. Ground every claim in the evidence or the stated background.
+- 0-1 emoji max. No bullet lists. No hype.
+- 140-220 words (excluding hashtags and reference). Ground every claim in the evidence or the stated background.
 Output plain text only (the post)."""
 
         try:
