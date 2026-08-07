@@ -124,28 +124,27 @@ class QueryExpansionService:
         if parsed.avoid_topics:
             avoid_line = f"\nAvoid queries that mostly surface unrelated topics: {', '.join(parsed.avoid_topics)}"
 
-        prompt = f"""You are a content intelligence analyst. Generate search queries to find trending conversations and research across news, arXiv, PubMed, preprints, Hacker News, and X that this person could turn into LinkedIn posts.
+        prompt = f"""You are a content intelligence analyst helping position this person as a leading industry voice. Generate search queries to find TRENDING, high-signal conversations, product launches, and tools across news, industry blogs, Hacker News, Dev.to, GitHub, and X that they could turn into sharp LinkedIn posts.
 
 {parsed.prompt_block()}
 
 Generate {active_run_settings().max_search_queries} specific full-text search queries (2-5 words each).
 
 Rules:
-- Queries must reflect the CONTENT GOAL first — principle/resume background is for draft angle only, NOT for choosing unrelated search topics
-- Always include queries using the user's exact goal language (e.g. if they said "media marketing", include "media marketing" and close variants)
-- Prefer specific sub-topics, tools, debates, launches, or workflows inside the user's goal
-- These run as full-text search on forums — use natural phrases, NO operators/hashtags/quotes
-- Avoid overly broad single-word queries ("AI", "health", "data" alone)
-- Avoid ambiguous terms that pull unrelated domains (e.g. "data validation" alone surfaces crypto)
-- Prefer compound phrases that disambiguate the domain ("media marketing trends", not "data pipeline")
-- Include 2-3 queries aimed at research (papers, clinical trials, ML methods) when the goal involves science, healthcare, or data{avoid_line}
+- Queries must reflect the CONTENT GOAL and the STRATEGIC FOCUS above first — principle/resume background is for draft angle only.
+- Prefer concrete, CURRENT angles a leader would comment on: new tools and launches, notable company/product moves, adoption and strategy debates, and real-world workflows.
+- Favor named tools, platforms, and companies over abstract themes.
+- AVOID generic academic or theoretical research queries (no "clinical trial", "systematic review", "arxiv paper", "meta-analysis" style) unless the goal is explicitly academic.
+- Always include queries using the user's exact goal language and close variants.
+- These run as full-text search — use natural phrases, NO operators/hashtags/quotes.
+- Avoid overly broad single-word queries ("AI", "data" alone) and ambiguous terms that pull unrelated domains; prefer compound phrases that disambiguate.{avoid_line}
 - Return ONLY a JSON array of strings
 {trend_context}
 
 Examples (adapt to the user's actual goal — do not copy these literally):
-- Goal "AI in healthcare diagnostics": ["AI radiology FDA", "clinical AI workflow", "diagnostic AI debate"]
-- Goal "startup fundraising": ["Series A climate tech", "VC AI agents", "founder fundraising tips"]
-- Goal "media marketing": ["media marketing trends", "retail media networks", "programmatic advertising debate"]
+- Goal "AI leadership": ["enterprise AI adoption", "AI agent platform launch", "AI governance strategy"]
+- Goal "AI developer tools": ["new LLM framework", "AI coding assistant", "agent orchestration tool"]
+- Goal "media marketing": ["retail media networks", "AI ad targeting launch", "marketing mix modeling"]
 """
 
         try:

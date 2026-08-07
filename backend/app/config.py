@@ -22,7 +22,28 @@ class Settings(BaseSettings):
     # Comma-separated, in priority order. A source only runs if also configured.
     # news + industry + hackernews + arxiv + pubmed + preprint + devto need no keys;
     # x_research needs X API; reddit needs OAuth; x optional.
-    enabled_sources: str = "news,industry,hackernews,arxiv,pubmed,preprint,devto,x_research,x"
+    enabled_sources: str = "news,industry,hackernews,devto,github,x_research,x"
+
+    # --- Strategic focus / persona lens (biases discovery, analysis, and drafts) ---
+    # Injected into the query-expansion, analysis, and draft prompts via
+    # ParsedObjective.prompt_block(). The default positions the author as an
+    # authoritative AI CEO and steers discovery AWAY from generic academic research
+    # toward AI tools, products, and leadership. Blank = neutral (topics come purely
+    # from the user's Content Objective).
+    content_focus: str = (
+        "Position the author as an authoritative AI CEO and industry leader. Prioritize "
+        "enterprise AI strategy, AI agents and tooling, applied AI products, notable new "
+        "AI tools and launches, AI adoption, governance, ROI, and competitive advantage. "
+        "AVOID generic academic or purely theoretical research and beginner how-to content."
+    )
+
+    # --- GitHub AI tools (surface trending AI tool repos to post about) ---
+    github_token: str = ""  # optional PAT: raises rate limit 10->30 req/min
+    github_search_terms: str = (
+        "AI agents,LLM framework,RAG,AI developer tools,LLM orchestration,AI coding assistant"
+    )
+    github_min_stars: int = 100
+    github_days_window: int = 90
     # Cap queries fanned out to each source (controls API cost / rate limits)
     max_queries_per_source: int = 8
     # Posts pulled per (query, source) before relevance filtering
@@ -118,7 +139,7 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openai_image_model: str = "gpt-image-1"
     openai_image_size: str = "1536x1024"  # landscape, close to LinkedIn 1200x627
-    openai_image_quality: str = "medium"  # low | medium | high | auto
+    openai_image_quality: str = "high"  # low | medium | high | auto (high = best, ~$0.19/image)
     linkedin_drafts_count: int = 5
 
     # --- Video generation (OpenAI Sora — image-to-video, on demand) ---

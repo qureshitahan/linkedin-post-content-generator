@@ -39,6 +39,11 @@ export const SOURCE_OPTIONS: { id: string; label: string; paid?: boolean; help: 
     help: 'Practitioner articles (ML, data, healthcare, DevOps tags). Free — how people in the field actually talk about topics.',
   },
   {
+    id: 'github',
+    label: 'GitHub AI tools',
+    help: 'Trending AI tool repos (agents, LLM frameworks, RAG, dev tools) from the GitHub API. Free — surfaces the new tools an AI leader should be talking about.',
+  },
+  {
     id: 'x_research',
     label: 'X research buzz',
     paid: true,
@@ -61,7 +66,7 @@ export const DRAFT_STYLE_OPTIONS: { id: string; label: string; desc: string }[] 
 ];
 
 export const DEFAULT_RUN_SETTINGS: RunSettings = {
-  enabled_sources: ['news', 'industry', 'hackernews', 'arxiv', 'pubmed', 'preprint', 'devto'],
+  enabled_sources: ['news', 'industry', 'hackernews', 'devto', 'github'],
   max_queries_per_source: 5,
   posts_per_query: 15,
   max_topics_to_analyze: 3,
